@@ -28,12 +28,14 @@ public class SearchPipeline : ISearchPipeline
         _stages.Add(evidenceBuildStage);
     }
 
-    public async Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public async Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
+        var currentContext = context;
         foreach (var stage in _stages)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await stage.ExecuteAsync(context, cancellationToken);
+            currentContext = await stage.ExecuteAsync(currentContext, cancellationToken);
         }
+        return currentContext;
     }
 }

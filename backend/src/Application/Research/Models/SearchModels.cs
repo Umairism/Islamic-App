@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using IslamicApp.Application.DTOs;
+using IslamicApp.Application.Research.Enums;
 
 namespace IslamicApp.Application.Research.Models;
 
@@ -53,47 +54,33 @@ public record ExportMetadata(
 );
 
 public record EvidenceReference(
-    string SourceType, // e.g. "Quran"
-    string Reference,  // e.g. "2:255"
-    int GlobalIndex,
-    string Language
+    KnowledgeIdentifier Identifier,
+    string FormattedReference,
+    int GlobalIndex
 );
 
-public record SearchCandidate(
-    string SourceType,
-    string SourceName,
-    string Reference,
-    string PrimaryText,
-    string OriginalLanguage,
-    List<TranslationDto> Translations,
-    Dictionary<string, object> Metadata
-)
-{
-    // Temporary variables used by ranking engine
-    public double Score { get; set; } = 0;
-    public List<string> Reasons { get; } = new();
-    public List<string> Highlights { get; } = new();
-    public List<string> MatchedTerms { get; } = new();
-}
-
 public record EvidenceItem(
-    string SourceType,
-    string SourceName,
+    EvidenceSource Source,
+    string Collection,
     string Reference,
     string PrimaryText,
-    string OriginalLanguage,
-    List<TranslationDto> Translations,
-    Dictionary<string, object> Metadata,
+    IReadOnlyList<TranslationDto> Translations,
+    EvidenceMetadata Metadata,
     double Score,
     List<string> Reasons,
-    List<string> Highlights
+    List<string> Highlights,
+    List<RelatedEvidence> Related
+);
+
+public record EvidenceCollection(
+    string GroupName,
+    List<EvidenceItem> Items
 );
 
 public record EvidenceDossier(
     SearchExecutionContext ExecutionContext,
     string Summary,
-    List<EvidenceItem> PrimaryEvidence,
-    List<EvidenceItem> SupportingEvidence,
+    List<EvidenceCollection> Collections,
     List<string> RelatedReferences,
     List<string> RelatedTopics,
     ExportMetadata ExportMetadata

@@ -1,26 +1,30 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 
 namespace IslamicApp.Application.Research.Models;
 
-public class SearchContext
+public record SearchContext(
+    SearchQuery Query,
+    SearchOptions Options,
+    SearchExecutionContext? ExecutionContext = null,
+    string NormalizedQuery = "",
+    IReadOnlyList<string>? RawTokens = null,
+    IReadOnlyList<string>? NormalizedTokens = null,
+    IReadOnlyList<string>? UniqueTokens = null,
+    IReadOnlyList<string>? ExpandedTokens = null,
+    EvidenceReference? ResolvedReference = null,
+    IReadOnlyList<EvidenceMatch>? Candidates = null,
+    IReadOnlyList<EvidenceMatch>? RankedCandidates = null,
+    IReadOnlyList<EvidenceItem>? EvidenceItems = null,
+    SearchDiagnostics? Diagnostics = null
+)
 {
-    public SearchQuery Query { get; set; }
-    public SearchOptions Options { get; set; }
-    public SearchExecutionContext? ExecutionContext { get; set; }
-    public string NormalizedQuery { get; set; } = string.Empty;
-    public List<string> RawTokens { get; set; } = new();
-    public List<string> NormalizedTokens { get; set; } = new();
-    public List<string> UniqueTokens { get; set; } = new();
-    public List<string> ExpandedTokens { get; set; } = new();
-    public EvidenceReference? ResolvedReference { get; set; }
-    public List<SearchCandidate> Candidates { get; set; } = new();
-    public List<SearchCandidate> RankedCandidates { get; set; } = new();
-    public List<EvidenceItem> EvidenceItems { get; set; } = new();
-    public SearchDiagnostics Diagnostics { get; set; } = new();
-
-    public SearchContext(SearchQuery query, SearchOptions options)
-    {
-        Query = query;
-        Options = options;
-    }
+    public IReadOnlyList<string> RawTokensList => RawTokens ?? ImmutableList<string>.Empty;
+    public IReadOnlyList<string> NormalizedTokensList => NormalizedTokens ?? ImmutableList<string>.Empty;
+    public IReadOnlyList<string> UniqueTokensList => UniqueTokens ?? ImmutableList<string>.Empty;
+    public IReadOnlyList<string> ExpandedTokensList => ExpandedTokens ?? ImmutableList<string>.Empty;
+    public IReadOnlyList<EvidenceMatch> CandidatesList => Candidates ?? ImmutableList<EvidenceMatch>.Empty;
+    public IReadOnlyList<EvidenceMatch> RankedCandidatesList => RankedCandidates ?? ImmutableList<EvidenceMatch>.Empty;
+    public IReadOnlyList<EvidenceItem> EvidenceItemsList => EvidenceItems ?? ImmutableList<EvidenceItem>.Empty;
+    public SearchDiagnostics DiagnosticsValue => Diagnostics ?? new SearchDiagnostics();
 }

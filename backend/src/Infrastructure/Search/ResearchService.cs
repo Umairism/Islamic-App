@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
 using IslamicApp.Infrastructure.Persistence;
@@ -53,7 +54,7 @@ public class ResearchService : IResearchService
         var context = new SearchContext(query, query.Options);
 
         // Execute Search Pipeline
-        await _pipeline.ExecuteAsync(context, cancellationToken);
+        context = await _pipeline.ExecuteAsync(context, cancellationToken);
         totalSw.Stop();
 
         // Trace execution statistics and checksums
@@ -70,7 +71,7 @@ public class ResearchService : IResearchService
             StartedAt: startedAt,
             OriginalQuery: query.OriginalQuery,
             NormalizedQuery: context.NormalizedQuery,
-            Language: context.UniqueTokens.Count > 0 ? "en" : "ar",
+            Language: context.UniqueTokensList.Count > 0 ? "en" : "ar",
             Strategy: context.ResolvedReference != null ? "ReferenceMatch" : "LexicalSearch",
             RankingChecksum: rankingChk,
             SynonymChecksum: synonymChk,
@@ -78,48 +79,51 @@ public class ResearchService : IResearchService
             StopwordChecksum: tokenizerChk
         );
 
-        context.ExecutionContext = execContext;
-
-        var diagnostics = context.Diagnostics with 
+        var diagnostics = context.DiagnosticsValue with 
         { 
             ExecutionTimeMs = totalSw.Elapsed.TotalMilliseconds 
         };
 
-        // Determine strategy description
-        string strategy = context.ResolvedReference != null ? "Reference" : "Keyword";
+        // Segment matches into EvidenceCollection groupings
+        var collections = new List<EvidenceCollection>();
+        var primaryItems = context.EvidenceItemsList.Where(e => e.Score >= 50).ToList();
+        var supportingItems = context.EvidenceItemsList.Where(e => e.Score < 50).ToList();
 
-        // Segment candidates into Primary (Score >= 50) and Supporting (Score < 50)
-        var primary = context.EvidenceItems.Where(e => e.Score >= 50).ToList();
-        var supporting = context.EvidenceItems.Where(e => e.Score < 50).ToList();
-
-        // Fallback: if it's a reference search or no query tokens match, treat all items as primary
         if (context.ResolvedReference != null)
         {
-            primary = context.EvidenceItems;
-            supporting = new List<EvidenceItem>();
+            collections.Add(new EvidenceCollection("Primary Evidence", context.EvidenceItemsList.ToList()));
         }
+        else
+        {
+            if (primaryItems.Count > 0)
+            {
+                collections.Add(new EvidenceCollection("Primary Evidence", primaryItems));
+            }
+            if (supportingItems.Count > 0)
+            {
+                collections.Add(new EvidenceCollection("Supporting Evidence", supportingItems));
+            }
+        }
+
+        string strategy = context.ResolvedReference != null ? "Reference" : "Keyword";
 
         var export = new ExportMetadata(
             GeneratedAt: startedAt,
             SearchId: searchId,
             ApplicationVersion: "1.0",
-            DatasetVersions: "Quran-v1",
+            DatasetVersions: "Quran-v1,Hadith-v1",
             ExecutionTimeMs: totalSw.Elapsed.TotalMilliseconds,
-            SourcesUsed: new List<string> { "Quran" },
+            SourcesUsed: new List<string> { "Quran", "Hadith" },
             Language: execContext.Language
         );
 
-        // Save diagnostics to context before building dossier
-        context.Diagnostics = diagnostics;
-
-        // Build related topics and references statically or dynamically
-        var relatedRefs = context.EvidenceItems
+        var relatedRefs = context.EvidenceItemsList
             .Select(e => e.Reference)
             .Take(5)
             .ToList();
 
-        var relatedTopics = context.UniqueTokens
-            .Concat(context.ExpandedTokens)
+        var relatedTopics = context.UniqueTokensList
+            .Concat(context.ExpandedTokensList)
             .Distinct()
             .Take(5)
             .ToList();
@@ -127,8 +131,7 @@ public class ResearchService : IResearchService
         return new EvidenceDossier(
             ExecutionContext: execContext,
             Summary: $"Search strategy: {strategy}. Total matches: {diagnostics.TotalMatches}.",
-            PrimaryEvidence: primary,
-            SupportingEvidence: supporting,
+            Collections: collections,
             RelatedReferences: relatedRefs,
             RelatedTopics: relatedTopics,
             ExportMetadata: export
@@ -142,11 +145,10 @@ public class ResearchService : IResearchService
 
         if (_resolver.TryResolve(reference, out var resolved) && resolved != null)
         {
-            var match = Regex.Match(resolved.Reference, @"^(\d+):(\d+)$");
-            if (match.Success)
+            if (resolved.Identifier.Source == EvidenceSource.Quran && resolved.Identifier.Book != null)
             {
-                int surah = int.Parse(match.Groups[1].Value);
-                int ayah = int.Parse(match.Groups[2].Value);
+                int surah = int.Parse(resolved.Identifier.Book);
+                int ayah = int.Parse(resolved.Identifier.VerseOrHadithNumber ?? "1");
 
                 var v = await _dbContext.QuranVerses
                     .AsNoTracking()
@@ -156,30 +158,66 @@ public class ResearchService : IResearchService
 
                 if (v != null)
                 {
-                    var meta = new Dictionary<string, object>
+                    var match = new EvidenceMatch
                     {
-                        { "SurahNumber", v.SurahNumber },
-                        { "AyahNumber", v.AyahNumber },
-                        { "SurahEnglishName", v.Surah.EnglishName }
-                    };
-
-                    var candidate = new SearchCandidate(
-                        SourceType: "Quran",
-                        SourceName: "Qur'an",
-                        Reference: $"{v.SurahNumber}:{v.AyahNumber}",
-                        PrimaryText: v.ArabicCleaned,
-                        OriginalLanguage: "ar",
-                        Translations: v.Translations
+                        Source = EvidenceSource.Quran,
+                        Collection = "Quran",
+                        Reference = $"{v.SurahNumber}:{v.AyahNumber}",
+                        PrimaryText = v.ArabicCleaned,
+                        Translations = v.Translations
                             .Select(t => new TranslationDto { Language = t.Language, Translator = t.Translator, Text = t.Text })
                             .ToList(),
-                        Metadata: meta
-                    )
-                    {
+                        Metadata = new EvidenceMetadata(
+                            Dataset: "Quran-JSON",
+                            Edition: "Sahih International",
+                            Translator: "Sahih International",
+                            Language: "en",
+                            Version: "3.1.2",
+                            Checksum: "default_checksum"
+                        ),
                         Score = 100
                     };
-                    candidate.Reasons.Add("Exact reference lookup");
+                    match.Reasons.Add("Exact reference lookup");
 
-                    return _evidenceBuilder.BuildItem(candidate);
+                    return _evidenceBuilder.BuildItem(match);
+                }
+            }
+            else if (resolved.Identifier.Source == EvidenceSource.Hadith)
+            {
+                string coll = resolved.Identifier.Collection;
+                int hadithNum = int.Parse(resolved.Identifier.VerseOrHadithNumber ?? "1");
+
+                var h = await _dbContext.Hadiths
+                    .AsNoTracking()
+                    .Include(h => h.Collection)
+                    .Include(h => h.Book)
+                    .FirstOrDefaultAsync(h => h.Collection.ShortName.Contains(coll) && h.HadithNumber == hadithNum, cancellationToken);
+
+                if (h != null)
+                {
+                    var match = new EvidenceMatch
+                    {
+                        Source = EvidenceSource.Hadith,
+                        Collection = h.Collection.DisplayName,
+                        Reference = $"{h.Book.BookNumber}:{h.HadithNumber}",
+                        PrimaryText = h.ArabicCleaned,
+                        Translations = new List<TranslationDto>
+                        {
+                            new() { Language = "en", Translator = "Muhsin Khan", Text = $"{h.EnglishNarrator} {h.EnglishText}" }
+                        },
+                        Metadata = new EvidenceMetadata(
+                            Dataset: h.Collection.DisplayName,
+                            Edition: "Darussalam",
+                            Translator: "Muhsin Khan",
+                            Language: "en",
+                            Version: "2025.01",
+                            Checksum: "default_checksum"
+                        ),
+                        Score = 100
+                    };
+                    match.Reasons.Add("Exact reference lookup");
+
+                    return _evidenceBuilder.BuildItem(match);
                 }
             }
         }

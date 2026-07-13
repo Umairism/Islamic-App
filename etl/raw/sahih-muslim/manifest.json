@@ -1,0 +1,15 @@
+{
+  "dataset": {
+    "name": "Sahih Muslim",
+    "edition": "Darussalam",
+    "version": "2025.01",
+    "sourceUrl": "https://github.com/Umairism/sahih-muslim",
+    "license": "Public Domain"
+  },
+  "files": [
+    {
+      "path": "data/muslim.json.gz",
+      "expectedChecksum": "8d46b7243d9895768038fe598eecdf55074645c51272c5623f54dda62d939535"
+    }
+  ]
+}

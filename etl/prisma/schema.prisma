@@ -68,3 +68,59 @@ model QuranTranslation {
 
   @@index([verseId, language])
 }
+
+model HadithCollection {
+  id                  String       @id @default(cuid())
+  slug                String       @unique // e.g. "sahih-al-bukhari"
+  shortName           String       // e.g. "Bukhari"
+  displayName         String       // e.g. "Sahih al-Bukhari"
+  titleArabic         String
+  titleEnglish        String
+  authorArabic        String
+  authorEnglish       String
+  introductionArabic  String
+  introductionEnglish String
+  totalHadiths        Int
+  books               HadithBook[]
+  hadiths             Hadith[]
+}
+
+model HadithBook {
+  id               String           @id @default(cuid())
+  collectionId     String
+  collection       HadithCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  bookNumber       Int
+  titleArabic      String
+  titleEnglish     String
+  chapters         HadithChapter[]
+  hadiths          Hadith[]
+}
+
+model HadithChapter {
+  id            String        @id @default(cuid())
+  bookId        String
+  book          HadithBook    @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapterNumber Int
+  titleArabic   String
+  titleEnglish  String
+  hadiths       Hadith[]
+}
+
+model Hadith {
+  id              String           @id @default(cuid())
+  collectionId    String
+  collection      HadithCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  bookId          String
+  book            HadithBook       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  chapterId       String
+  chapter         HadithChapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  hadithNumber    Int              // Sequential number in the database
+  canonicalNumber String?          // Global numbering (e.g. Fath al-Bari index)
+  originalNumber  String?          // Original dataset file numbering
+  arabicText      String
+  arabicCleaned   String
+  englishNarrator String
+  englishText     String
+
+  @@index([collectionId, hadithNumber])
+}

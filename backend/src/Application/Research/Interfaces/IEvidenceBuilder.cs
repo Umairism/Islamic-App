@@ -4,5 +4,5 @@ namespace IslamicApp.Application.Research.Interfaces;
 
 public interface IEvidenceBuilder
 {
-    EvidenceItem BuildItem(SearchCandidate candidate);
+    EvidenceItem BuildItem(EvidenceMatch match);
 }

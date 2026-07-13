@@ -4,5 +4,5 @@ namespace IslamicApp.Application.Research.Interfaces;
 
 public interface IRankingEngine
 {
-    void Rank(SearchContext context);
+    SearchContext Rank(SearchContext context);
 }

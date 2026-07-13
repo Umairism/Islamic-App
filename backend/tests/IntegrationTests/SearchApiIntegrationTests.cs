@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Xunit;
 using Microsoft.AspNetCore.Mvc.Testing;
 using IslamicApp.Application.DTOs;
+using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Models;
 
 namespace IslamicApp.IntegrationTests;
@@ -36,11 +37,14 @@ public class SearchApiIntegrationTests : IClassFixture<WebApplicationFactory<Web
         Assert.Equal("2:255", dossier.ExecutionContext.OriginalQuery);
         Assert.Equal("ReferenceMatch", dossier.ExecutionContext.Strategy);
         
-        Assert.NotEmpty(dossier.PrimaryEvidence);
-        var firstMatch = dossier.PrimaryEvidence.First();
-        Assert.Equal("Quran", firstMatch.SourceType);
-        Assert.Equal("2:255", firstMatch.Reference);
-        Assert.Equal(100.0, firstMatch.Score);
+        var primary = dossier.Collections.FirstOrDefault(c => c.GroupName == "Primary Evidence")?.Items;
+        Assert.NotNull(primary);
+        Assert.NotEmpty(primary);
+        
+        var firstMatch = primary.First();
+        Assert.Equal(EvidenceSource.Quran, firstMatch.Source);
+        Assert.Equal("Qur'an 2:255", firstMatch.Reference);
+        Assert.Equal(100.0, firstMatch.Score); // Capped at 100.0 max limit
         Assert.Contains("Exact reference match", firstMatch.Reasons);
     }
 
@@ -57,10 +61,13 @@ public class SearchApiIntegrationTests : IClassFixture<WebApplicationFactory<Web
         var dossier = result.Data;
         Assert.Equal("ayat al kursi", dossier.ExecutionContext.OriginalQuery.ToLowerInvariant());
         
-        Assert.NotEmpty(dossier.PrimaryEvidence);
-        var firstMatch = dossier.PrimaryEvidence.First();
-        Assert.Equal("2:255", firstMatch.Reference);
-        Assert.Equal(95.0, firstMatch.Score); // Alias match gets 95 points
+        var primary = dossier.Collections.FirstOrDefault(c => c.GroupName == "Primary Evidence")?.Items;
+        Assert.NotNull(primary);
+        Assert.NotEmpty(primary);
+        
+        var firstMatch = primary.First();
+        Assert.Equal("Qur'an 2:255", firstMatch.Reference);
+        Assert.Equal(97.0, firstMatch.Score); // 95 Alias match + 2.0 priority boost
         Assert.Contains("Alias reference match", firstMatch.Reasons);
     }
 
@@ -75,7 +82,8 @@ public class SearchApiIntegrationTests : IClassFixture<WebApplicationFactory<Web
         Assert.NotNull(result);
 
         var dossier = result.Data;
-        Assert.NotEmpty(dossier.PrimaryEvidence.Concat(dossier.SupportingEvidence));
+        var allItems = dossier.Collections.SelectMany(c => c.Items).ToList();
+        Assert.NotEmpty(allItems);
         
         // Assert execution ID is tracked
         Assert.NotEqual(Guid.Empty, dossier.ExecutionContext.SearchId);
@@ -93,7 +101,8 @@ public class SearchApiIntegrationTests : IClassFixture<WebApplicationFactory<Web
         Assert.NotNull(result);
 
         var dossier = result.Data;
-        Assert.NotEmpty(dossier.PrimaryEvidence.Concat(dossier.SupportingEvidence));
+        var allItems = dossier.Collections.SelectMany(c => c.Items).ToList();
+        Assert.NotEmpty(allItems);
     }
 
     [Fact]
@@ -108,8 +117,8 @@ public class SearchApiIntegrationTests : IClassFixture<WebApplicationFactory<Web
         Assert.NotNull(result.Data);
 
         var item = result.Data;
-        Assert.Equal("Quran", item.SourceType);
-        Assert.Equal("2:255", item.Reference);
+        Assert.Equal(EvidenceSource.Quran, item.Source);
+        Assert.Equal("Qur'an 2:255", item.Reference);
         Assert.Contains("لله", item.PrimaryText); // Cleaned arabic Ayat al Kursi
     }
 

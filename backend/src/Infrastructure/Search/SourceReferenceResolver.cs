@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Research.Enums;
 
 namespace IslamicApp.Infrastructure.Search;
 
@@ -39,7 +40,27 @@ public class SourceReferenceResolver : ISourceReferenceResolver
 
         string normalized = query.Trim().ToLowerInvariant();
 
-        // 1. Check for Alias match
+        // 1. Check for Hadith reference format (e.g. bukhari 54, muslim 12)
+        var hadithMatch = Regex.Match(normalized, @"^(?:sahih\s+al-)?(bukhari|muslim)\s*[:\s-]\s*(\d+)$");
+        if (hadithMatch.Success)
+        {
+            string collection = hadithMatch.Groups[1].Value == "bukhari" ? "Bukhari" : "Muslim";
+            string number = hadithMatch.Groups[2].Value;
+
+            var ident = new KnowledgeIdentifier(
+                Source: EvidenceSource.Hadith,
+                Collection: collection,
+                Book: "1", // Default Book reference mapping
+                Chapter: "1",
+                VerseOrHadithNumber: number,
+                Language: "en"
+            );
+
+            reference = new EvidenceReference(ident, $"{collection} Hadith {number}", int.Parse(number));
+            return true;
+        }
+
+        // 2. Check for Alias match
         var matchedAlias = _aliases.FirstOrDefault(a => 
             string.Equals(a.Alias.Trim(), normalized, StringComparison.OrdinalIgnoreCase));
         
@@ -73,7 +94,15 @@ public class SourceReferenceResolver : ISourceReferenceResolver
 
             if (surah >= 1 && surah <= 114)
             {
-                reference = new EvidenceReference("Quran", $"{surah}:{ayah}", GetGlobalIndex(surah, int.Parse(match.Groups[2].Value)), "ar");
+                var ident = new KnowledgeIdentifier(
+                    Source: EvidenceSource.Quran,
+                    Collection: "Quran",
+                    Book: surah.ToString(),
+                    Chapter: null,
+                    VerseOrHadithNumber: ayah,
+                    Language: "ar"
+                );
+                reference = new EvidenceReference(ident, $"{surah}:{ayah}", GetGlobalIndex(surah, int.Parse(match.Groups[2].Value)));
                 return true;
             }
         }
@@ -91,7 +120,15 @@ public class SourceReferenceResolver : ISourceReferenceResolver
                     ayah += "-" + wordMatch.Groups[3].Value;
                 }
 
-                reference = new EvidenceReference("Quran", $"{surah}:{ayah}", GetGlobalIndex(surah, int.Parse(wordMatch.Groups[2].Value)), "ar");
+                var ident = new KnowledgeIdentifier(
+                    Source: EvidenceSource.Quran,
+                    Collection: "Quran",
+                    Book: surah.ToString(),
+                    Chapter: null,
+                    VerseOrHadithNumber: ayah,
+                    Language: "ar"
+                );
+                reference = new EvidenceReference(ident, $"{surah}:{ayah}", GetGlobalIndex(surah, int.Parse(wordMatch.Groups[2].Value)));
                 return true;
             }
         }
@@ -99,7 +136,15 @@ public class SourceReferenceResolver : ISourceReferenceResolver
         // Fallback check: e.g. "baqarah" without ayah (resolves to surah:1 or surah name check)
         if (_surahNames.TryGetValue(cleaned, out int surahNum))
         {
-            reference = new EvidenceReference("Quran", $"{surahNum}:1", GetGlobalIndex(surahNum, 1), "ar");
+            var ident = new KnowledgeIdentifier(
+                Source: EvidenceSource.Quran,
+                Collection: "Quran",
+                Book: surahNum.ToString(),
+                Chapter: null,
+                VerseOrHadithNumber: "1",
+                Language: "ar"
+            );
+            reference = new EvidenceReference(ident, $"{surahNum}:1", GetGlobalIndex(surahNum, 1));
             return true;
         }
 
@@ -115,7 +160,15 @@ public class SourceReferenceResolver : ISourceReferenceResolver
             int surah = int.Parse(match.Groups[1].Value);
             int startAyah = int.Parse(match.Groups[2].Value);
             
-            reference = new EvidenceReference("Quran", refStr, GetGlobalIndex(surah, startAyah), "ar");
+            var ident = new KnowledgeIdentifier(
+                Source: EvidenceSource.Quran,
+                Collection: "Quran",
+                Book: surah.ToString(),
+                Chapter: null,
+                VerseOrHadithNumber: match.Groups[2].Value,
+                Language: "ar"
+            );
+            reference = new EvidenceReference(ident, refStr, GetGlobalIndex(surah, startAyah));
             return true;
         }
         return false;

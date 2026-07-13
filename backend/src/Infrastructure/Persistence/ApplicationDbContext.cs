@@ -14,6 +14,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<SurahEntity> Surahs { get; set; }
     public DbSet<QuranVerseEntity> QuranVerses { get; set; }
     public DbSet<QuranTranslationEntity> QuranTranslations { get; set; }
+    public DbSet<HadithCollectionEntity> HadithCollections { get; set; }
+    public DbSet<HadithBookEntity> HadithBooks { get; set; }
+    public DbSet<HadithChapterEntity> HadithChapters { get; set; }
+    public DbSet<HadithEntity> Hadiths { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -105,6 +109,91 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(d => d.Verse)
                 .WithMany(p => p.Translations)
                 .HasForeignKey(d => d.VerseId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<HadithCollectionEntity>(entity =>
+        {
+            entity.ToTable("HadithCollection");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.Slug).HasColumnName("slug").IsRequired();
+            entity.Property(e => e.ShortName).HasColumnName("shortName").IsRequired();
+            entity.Property(e => e.DisplayName).HasColumnName("displayName").IsRequired();
+            entity.Property(e => e.TitleArabic).HasColumnName("titleArabic").IsRequired();
+            entity.Property(e => e.TitleEnglish).HasColumnName("titleEnglish").IsRequired();
+            entity.Property(e => e.AuthorArabic).HasColumnName("authorArabic").IsRequired();
+            entity.Property(e => e.AuthorEnglish).HasColumnName("authorEnglish").IsRequired();
+            entity.Property(e => e.IntroductionArabic).HasColumnName("introductionArabic").IsRequired();
+            entity.Property(e => e.IntroductionEnglish).HasColumnName("introductionEnglish").IsRequired();
+            entity.Property(e => e.TotalHadiths).HasColumnName("totalHadiths").IsRequired();
+
+            entity.HasIndex(e => e.Slug).IsUnique();
+        });
+
+        modelBuilder.Entity<HadithBookEntity>(entity =>
+        {
+            entity.ToTable("HadithBook");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.CollectionId).HasColumnName("collectionId").IsRequired();
+            entity.Property(e => e.BookNumber).HasColumnName("bookNumber").IsRequired();
+            entity.Property(e => e.TitleArabic).HasColumnName("titleArabic").IsRequired();
+            entity.Property(e => e.TitleEnglish).HasColumnName("titleEnglish").IsRequired();
+
+            entity.HasOne(d => d.Collection)
+                .WithMany(p => p.Books)
+                .HasForeignKey(d => d.CollectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<HadithChapterEntity>(entity =>
+        {
+            entity.ToTable("HadithChapter");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.BookId).HasColumnName("bookId").IsRequired();
+            entity.Property(e => e.ChapterNumber).HasColumnName("chapterNumber").IsRequired();
+            entity.Property(e => e.TitleArabic).HasColumnName("titleArabic").IsRequired();
+            entity.Property(e => e.TitleEnglish).HasColumnName("titleEnglish").IsRequired();
+
+            entity.HasOne(d => d.Book)
+                .WithMany(p => p.Chapters)
+                .HasForeignKey(d => d.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<HadithEntity>(entity =>
+        {
+            entity.ToTable("Hadith");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.CollectionId).HasColumnName("collectionId").IsRequired();
+            entity.Property(e => e.BookId).HasColumnName("bookId").IsRequired();
+            entity.Property(e => e.ChapterId).HasColumnName("chapterId").IsRequired();
+            entity.Property(e => e.HadithNumber).HasColumnName("hadithNumber").IsRequired();
+            entity.Property(e => e.CanonicalNumber).HasColumnName("canonicalNumber");
+            entity.Property(e => e.OriginalNumber).HasColumnName("originalNumber");
+            entity.Property(e => e.ArabicText).HasColumnName("arabicText").IsRequired();
+            entity.Property(e => e.ArabicCleaned).HasColumnName("arabicCleaned").IsRequired();
+            entity.Property(e => e.EnglishNarrator).HasColumnName("englishNarrator").IsRequired();
+            entity.Property(e => e.EnglishText).HasColumnName("englishText").IsRequired();
+
+            entity.HasIndex(e => new { e.CollectionId, e.HadithNumber });
+
+            entity.HasOne(d => d.Collection)
+                .WithMany(p => p.Hadiths)
+                .HasForeignKey(d => d.CollectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(d => d.Book)
+                .WithMany(p => p.Hadiths)
+                .HasForeignKey(d => d.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(d => d.Chapter)
+                .WithMany(p => p.Hadiths)
+                .HasForeignKey(d => d.ChapterId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

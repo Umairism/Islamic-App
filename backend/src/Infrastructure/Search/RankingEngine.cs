@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
 
@@ -15,12 +16,14 @@ public class RankingEngine : IRankingEngine
         _config = config;
     }
 
-    public void Rank(SearchContext context)
+    public SearchContext Rank(SearchContext context)
     {
-        if (context == null || context.Candidates.Count == 0)
-            return;
+        if (context == null || context.CandidatesList.Count == 0)
+            return context ?? null!;
 
-        foreach (var candidate in context.Candidates)
+        var rankedList = new List<EvidenceMatch>();
+
+        foreach (var candidate in context.CandidatesList)
         {
             double maxScore = 0;
             var reasons = new List<string>();
@@ -28,10 +31,9 @@ public class RankingEngine : IRankingEngine
 
             // 1. Reference Match Check
             if (context.ResolvedReference != null && 
-                IsReferenceMatch(candidate.Reference, context.ResolvedReference.Reference))
+                IsReferenceMatch(candidate.Source, candidate.Reference, context.ResolvedReference.Identifier))
             {
-                // Check if the resolved reference was an alias or standard reference match
-                bool isAlias = context.UniqueTokens.Any(t => 
+                bool isAlias = context.UniqueTokensList.Any(t => 
                     string.Equals(t, "ayat", StringComparison.OrdinalIgnoreCase) || 
                     string.Equals(t, "kursi", StringComparison.OrdinalIgnoreCase));
                 
@@ -43,7 +45,7 @@ public class RankingEngine : IRankingEngine
                 }
             }
 
-            // Normalize Candidate Primary text (Arabic) for accurate match check
+            // Clean Arabic text
             string cleanArabic = candidate.PrimaryText ?? string.Empty;
 
             // 2. Exact Arabic Match
@@ -74,7 +76,7 @@ public class RankingEngine : IRankingEngine
             }
 
             // 4. Token level match & synonyms
-            foreach (var token in context.UniqueTokens)
+            foreach (var token in context.UniqueTokensList)
             {
                 // Arabic token match
                 if (cleanArabic.Contains(token, StringComparison.OrdinalIgnoreCase))
@@ -105,10 +107,9 @@ public class RankingEngine : IRankingEngine
             }
 
             // 5. Synonym matches
-            foreach (var expandedToken in context.ExpandedTokens)
+            foreach (var expandedToken in context.ExpandedTokensList)
             {
-                // Skip if already matched as an original query token
-                if (context.UniqueTokens.Contains(expandedToken, StringComparer.OrdinalIgnoreCase))
+                if (context.UniqueTokensList.Contains(expandedToken, StringComparer.OrdinalIgnoreCase))
                     continue;
 
                 foreach (var trans in candidate.Translations)
@@ -126,53 +127,59 @@ public class RankingEngine : IRankingEngine
                 }
             }
 
-            // 6. Surah Name match
-            if (candidate.Metadata.TryGetValue("SurahEnglishName", out var englishNameObj) && englishNameObj is string englishName)
+            // 6. Metadata matching factors (e.g. source priority)
+            if (candidate.Source == EvidenceSource.Quran)
             {
-                if (context.UniqueTokens.Any(token => englishName.Contains(token, StringComparison.OrdinalIgnoreCase)))
-                {
-                    if (_config.SurahName > maxScore)
-                    {
-                        maxScore = _config.SurahName;
-                        reasons.Add($"Surah name match: {englishName}");
-                    }
-                }
+                // Assign a subtle boost for primary source
+                maxScore = Math.Min(100.0, maxScore + 2.0);
             }
 
             candidate.Score = maxScore;
             candidate.Reasons.AddRange(reasons.Distinct());
             candidate.MatchedTerms.AddRange(matchedTerms.Distinct());
+
+            rankedList.Add(candidate);
         }
 
         // Sort by score descending, then by reference ascending
-        context.RankedCandidates = context.Candidates
+        var sorted = rankedList
             .OrderByDescending(c => c.Score)
             .ThenBy(c => c.Reference)
             .ToList();
+
+        return context with
+        {
+            RankedCandidates = sorted
+        };
     }
 
-    private static bool IsReferenceMatch(string candidateRef, string targetRef)
+    private static bool IsReferenceMatch(EvidenceSource source, string candidateRef, KnowledgeIdentifier target)
     {
-        if (string.Equals(candidateRef, targetRef, StringComparison.OrdinalIgnoreCase))
+        if (source != target.Source) return false;
+
+        if (string.Equals(candidateRef, target.VerseOrHadithNumber, StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Resolve range references (e.g. target "2:285-286" matches candidate "2:285" or "2:286")
-        if (targetRef.Contains("-"))
+        // Resolve range references (e.g. target "285-286" matches candidate "285" or "286")
+        if (target.VerseOrHadithNumber != null && target.VerseOrHadithNumber.Contains("-"))
         {
-            var parts = targetRef.Split(':');
-            if (parts.Length == 2)
+            var parts = target.VerseOrHadithNumber.Split('-');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int start) && int.TryParse(parts[1], out int end))
             {
-                string surah = parts[0];
-                var rangeParts = parts[1].Split('-');
-                if (rangeParts.Length == 2 && int.TryParse(rangeParts[0], out int start) && int.TryParse(rangeParts[1], out int end))
+                var candParts = candidateRef.Split(':');
+                string candAyahStr = candParts.Length == 2 ? candParts[1] : candidateRef;
+                if (int.TryParse(candAyahStr, out int candVal))
                 {
-                    var candParts = candidateRef.Split(':');
-                    if (candParts.Length == 2 && candParts[0] == surah && int.TryParse(candParts[1], out int candAyah))
-                    {
-                        return candAyah >= start && candAyah <= end;
-                    }
+                    return candVal >= start && candVal <= end;
                 }
             }
+        }
+
+        // Support exact Qur'an reference format matching (e.g., candidate "2:255" matches target book="2" verse="255")
+        if (source == EvidenceSource.Quran && target.Book != null)
+        {
+            string expected = $"{target.Book}:{target.VerseOrHadithNumber}";
+            return string.Equals(candidateRef, expected, StringComparison.OrdinalIgnoreCase);
         }
 
         return false;

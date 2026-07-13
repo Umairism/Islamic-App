@@ -51,3 +51,48 @@ export interface SearchDocument {
   type: 'QURAN' | 'HADITH' | 'TAFSIR';
   keywords: string[];
 }
+
+export interface NormalizedHadithCollection {
+  slug: string;
+  shortName: string;
+  displayName: string;
+  titleArabic: string;
+  titleEnglish: string;
+  authorArabic: string;
+  authorEnglish: string;
+  introductionArabic: string;
+  introductionEnglish: string;
+  totalHadiths: number;
+}
+
+export interface NormalizedHadithBook {
+  bookNumber: number;
+  titleArabic: string;
+  titleEnglish: string;
+}
+
+export interface NormalizedHadithChapter {
+  bookNumber: number;
+  chapterNumber: number;
+  titleArabic: string;
+  titleEnglish: string;
+}
+
+export interface NormalizedHadith {
+  bookNumber: number;
+  chapterNumber: number;
+  hadithNumber: number;
+  canonicalNumber?: string;
+  originalNumber?: string;
+  arabicText: string;
+  arabicCleaned: string;
+  englishNarrator: string;
+  englishText: string;
+}
+
+export interface NormalizedHadithData {
+  collection: NormalizedHadithCollection;
+  books: NormalizedHadithBook[];
+  chapters: NormalizedHadithChapter[];
+  hadiths: NormalizedHadith[];
+}

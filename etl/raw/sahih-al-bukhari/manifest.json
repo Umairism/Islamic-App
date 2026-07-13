@@ -1,0 +1,15 @@
+{
+  "dataset": {
+    "name": "Sahih al-Bukhari",
+    "edition": "Darussalam",
+    "version": "2025.01",
+    "sourceUrl": "https://github.com/Umairism/sahih-al-bukhari",
+    "license": "Public Domain"
+  },
+  "files": [
+    {
+      "path": "data/bukhari.json.gz",
+      "expectedChecksum": "05eaf3cb5de2fc9454a16ffc991a95b838089670719e39af03bdc3fe074093e7"
+    }
+  ]
+}

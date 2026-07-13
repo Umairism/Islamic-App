@@ -2,15 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using IslamicApp.Application.Research.Catalog;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
-using IslamicApp.Infrastructure.Persistence;
-using IslamicApp.Infrastructure.Persistence.Entities;
-using IslamicApp.Application.DTOs;
 
 namespace IslamicApp.Infrastructure.Search;
 
@@ -23,18 +20,22 @@ public class NormalizeStage : ISearchPipelineStage
         _normalizer = normalizer;
     }
 
-    public Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
-        context.NormalizedQuery = _normalizer.Normalize(context.Query.OriginalQuery);
+        string normalized = _normalizer.Normalize(context.Query.OriginalQuery);
         sw.Stop();
         
-        context.Diagnostics = context.Diagnostics with 
+        var updatedDiagnostics = context.DiagnosticsValue with 
         { 
             NormalizationTimeMs = sw.Elapsed.TotalMilliseconds 
         };
         
-        return Task.CompletedTask;
+        return Task.FromResult(context with 
+        { 
+            NormalizedQuery = normalized,
+            Diagnostics = updatedDiagnostics
+        });
     }
 }
 
@@ -47,24 +48,27 @@ public class TokenizeStage : ISearchPipelineStage
         _tokenizer = tokenizer;
     }
 
-    public Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
-        context.RawTokens = _tokenizer.Tokenize(context.Query.OriginalQuery);
-        context.NormalizedTokens = _tokenizer.Tokenize(context.NormalizedQuery);
+        var rawTokens = _tokenizer.Tokenize(context.Query.OriginalQuery);
+        var normalizedTokens = _tokenizer.Tokenize(context.NormalizedQuery);
         
-        // Remove stop words from unique tokens
         string detectedLanguage = DetermineLanguage(context.NormalizedQuery);
-        context.UniqueTokens = _tokenizer.RemoveStopwords(context.NormalizedTokens, detectedLanguage)
+        var uniqueTokens = _tokenizer.RemoveStopwords(normalizedTokens, detectedLanguage)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return Task.CompletedTask;
+        return Task.FromResult(context with
+        {
+            RawTokens = rawTokens,
+            NormalizedTokens = normalizedTokens,
+            UniqueTokens = uniqueTokens
+        });
     }
 
     private static string DetermineLanguage(string query)
     {
         if (string.IsNullOrWhiteSpace(query)) return "en";
-        // Simple script detection: if it contains Arabic characters, return "ar"
         if (query.Any(c => c >= 0x0600 && c <= 0x06FF)) return "ar";
         return "en";
     }
@@ -79,10 +83,13 @@ public class SynonymExpansionStage : ISearchPipelineStage
         _synonymEngine = synonymEngine;
     }
 
-    public Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
-        context.ExpandedTokens = _synonymEngine.ExpandTokens(context.UniqueTokens, out var weights);
-        return Task.CompletedTask;
+        var expanded = _synonymEngine.ExpandTokens(context.UniqueTokensList.ToList(), out _);
+        return Task.FromResult(context with
+        {
+            ExpandedTokens = expanded
+        });
     }
 }
 
@@ -95,135 +102,71 @@ public class ReferenceResolutionStage : ISearchPipelineStage
         _resolver = resolver;
     }
 
-    public Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
-        if (_resolver.TryResolve(context.Query.OriginalQuery, out var reference))
+        EvidenceReference? reference = null;
+        if (_resolver.TryResolve(context.Query.OriginalQuery, out var resolved))
         {
-            context.ResolvedReference = reference;
+            reference = resolved;
         }
-        return Task.CompletedTask;
+        
+        return Task.FromResult(context with
+        {
+            ResolvedReference = reference
+        });
     }
 }
 
 public class DatabaseQueryStage : ISearchPipelineStage
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly KnowledgeCatalog _catalog;
+    private readonly IServiceProvider _serviceProvider;
 
-    public DatabaseQueryStage(ApplicationDbContext dbContext)
+    public DatabaseQueryStage(KnowledgeCatalog catalog, IServiceProvider serviceProvider)
     {
-        _dbContext = dbContext;
+        _catalog = catalog;
+        _serviceProvider = serviceProvider;
     }
 
-    public async Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public async Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
-        var candidates = new List<SearchCandidate>();
+        var matches = new List<EvidenceMatch>();
 
-        // Scenario 1: Reference match
-        if (context.ResolvedReference != null)
-        {
-            var match = Regex.Match(context.ResolvedReference.Reference, @"^(\d+):(\d+)(?:-(\d+))?$");
-            if (match.Success)
+        // Execute active source searchers in parallel strictly respecting CancellationToken,
+        // resolving each searcher inside a dedicated DI scope to ensure thread-safety of DbContext.
+        var searchTasks = _catalog.Searchers
+            .Select(async searcher =>
             {
-                int surah = int.Parse(match.Groups[1].Value);
-                int startAyah = int.Parse(match.Groups[2].Value);
-                int endAyah = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : startAyah;
+                using var scope = _serviceProvider.CreateScope();
+                var scopedSearchers = scope.ServiceProvider.GetRequiredService<IEnumerable<ISourceSearcher>>();
+                var scopedSearcher = scopedSearchers.First(s => s.Source == searcher.Source);
+                return await scopedSearcher.SearchAsync(context, cancellationToken);
+            })
+            .ToList();
 
-                var verses = await _dbContext.QuranVerses
-                    .AsNoTracking()
-                    .Include(v => v.Surah)
-                    .Include(v => v.Translations)
-                    .Where(v => v.SurahNumber == surah && v.AyahNumber >= startAyah && v.AyahNumber <= endAyah)
-                    .ToListAsync(cancellationToken);
-
-                foreach (var v in verses)
-                {
-                    candidates.Add(MapToCandidate(v));
-                }
-            }
-        }
-        else
+        var searchResults = await Task.WhenAll(searchTasks);
+        foreach (var results in searchResults)
         {
-            // Scenario 2: Keyword search across expanded tokens
-            var targetTokens = context.ExpandedTokens;
-            if (targetTokens.Count > 0)
+            if (results != null)
             {
-                var matchedIds = new HashSet<string>();
-
-                foreach (var token in targetTokens)
-                {
-                    // Trigram matching translations
-                    var transIds = await _dbContext.QuranTranslations
-                        .Where(t => t.Text.Contains(token))
-                        .Select(t => t.VerseId)
-                        .Take(50)
-                        .ToListAsync(cancellationToken);
-                    
-                    foreach (var id in transIds) matchedIds.Add(id);
-
-                    // Trigram matching verses (ArabicCleaned)
-                    var verseIds = await _dbContext.QuranVerses
-                        .Where(v => v.ArabicCleaned.Contains(token))
-                        .Select(v => v.Id)
-                        .Take(50)
-                        .ToListAsync(cancellationToken);
-
-                    foreach (var id in verseIds) matchedIds.Add(id);
-
-                    // Trigram matching Surah names
-                    var surahVerseIds = await _dbContext.QuranVerses
-                        .Where(v => v.Surah.EnglishName.Contains(token) || v.Surah.Transliteration.Contains(token))
-                        .Select(v => v.Id)
-                        .Take(30)
-                        .ToListAsync(cancellationToken);
-
-                    foreach (var id in surahVerseIds) matchedIds.Add(id);
-                }
-
-                // Batch fetch matched verses
-                var matchedVerses = await _dbContext.QuranVerses
-                    .AsNoTracking()
-                    .Include(v => v.Surah)
-                    .Include(v => v.Translations)
-                    .Where(v => matchedIds.Contains(v.Id))
-                    .ToListAsync(cancellationToken);
-
-                foreach (var v in matchedVerses)
-                {
-                    candidates.Add(MapToCandidate(v));
-                }
+                matches.AddRange(results);
             }
         }
 
-        context.Candidates = candidates;
         sw.Stop();
-        context.Diagnostics = context.Diagnostics with 
+        
+        var updatedDiagnostics = context.DiagnosticsValue with 
         { 
             QueryTimeMs = sw.Elapsed.TotalMilliseconds,
-            TotalMatches = candidates.Count
+            TotalMatches = matches.Count
         };
-    }
 
-    private static SearchCandidate MapToCandidate(QuranVerseEntity v)
-    {
-        var meta = new Dictionary<string, object>
+        return context with
         {
-            { "SurahNumber", v.SurahNumber },
-            { "AyahNumber", v.AyahNumber },
-            { "SurahEnglishName", v.Surah.EnglishName }
+            Candidates = matches,
+            Diagnostics = updatedDiagnostics
         };
-
-        return new SearchCandidate(
-            SourceType: "Quran",
-            SourceName: "Qur'an",
-            Reference: $"{v.SurahNumber}:{v.AyahNumber}",
-            PrimaryText: v.ArabicCleaned,
-            OriginalLanguage: "ar",
-            Translations: v.Translations
-                .Select(t => new TranslationDto { Language = t.Language, Translator = t.Translator, Text = t.Text })
-                .ToList(),
-            Metadata: meta
-        );
     }
 }
 
@@ -236,27 +179,29 @@ public class RankingStage : ISearchPipelineStage
         _rankingEngine = rankingEngine;
     }
 
-    public Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
-        _rankingEngine.Rank(context);
+        var updatedContext = _rankingEngine.Rank(context);
         sw.Stop();
         
-        context.Diagnostics = context.Diagnostics with 
+        var updatedDiagnostics = updatedContext.DiagnosticsValue with 
         { 
             RankingTimeMs = sw.Elapsed.TotalMilliseconds 
         };
         
-        return Task.CompletedTask;
+        return Task.FromResult(updatedContext with 
+        { 
+            Diagnostics = updatedDiagnostics
+        });
     }
 }
 
 public class HighlightStage : ISearchPipelineStage
 {
-    // Highlights are built during EvidenceBuildStage dynamically
-    public Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        return Task.FromResult(context);
     }
 }
 
@@ -269,34 +214,36 @@ public class EvidenceBuildStage : ISearchPipelineStage
         _evidenceBuilder = evidenceBuilder;
     }
 
-    public Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
+    public Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         
-        // Paginate ranked results
         var page = context.Options.Page;
         var pageSize = context.Options.PageSize;
 
-        var paginatedCandidates = context.RankedCandidates
+        var paginatedMatches = context.RankedCandidatesList
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToList();
 
         var evidenceItems = new List<EvidenceItem>();
-        foreach (var candidate in paginatedCandidates)
+        foreach (var match in paginatedMatches)
         {
-            evidenceItems.Add(_evidenceBuilder.BuildItem(candidate));
+            evidenceItems.Add(_evidenceBuilder.BuildItem(match));
         }
 
-        context.EvidenceItems = evidenceItems;
         sw.Stop();
 
-        context.Diagnostics = context.Diagnostics with 
+        var updatedDiagnostics = context.DiagnosticsValue with 
         { 
             EvidenceBuildTimeMs = sw.Elapsed.TotalMilliseconds,
             ReturnedMatches = evidenceItems.Count
         };
 
-        return Task.CompletedTask;
+        return Task.FromResult(context with
+        {
+            EvidenceItems = evidenceItems,
+            Diagnostics = updatedDiagnostics
+        });
     }
 }

@@ -22,3 +22,9 @@ obj/
 .vs/
 *.user
 *.suo
+
+# ETL raw and processed data
+etl/raw/**
+!etl/raw/**/
+!etl/raw/**/manifest.json
+etl/processed/

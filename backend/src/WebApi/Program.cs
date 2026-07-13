@@ -14,6 +14,8 @@ using IslamicApp.Infrastructure.Persistence.Repositories;
 using IslamicApp.WebApi.Middleware;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Infrastructure.Search;
+using IslamicApp.Application.Research.Catalog;
+using IslamicApp.Infrastructure.Search.Citation;
 
 namespace IslamicApp.WebApi;
 
@@ -58,7 +60,7 @@ public class Program
         builder.Services.AddScoped<IEvidenceService, EvidenceService>();
         builder.Services.AddScoped<IHealthService, HealthService>();
 
-        // Register Milestone 3.5 Research Search Engine components
+        // Register Milestone 4 Research Search Engine & Knowledge Catalog components
         builder.Services.AddSingleton<ISearchNormalizer, SearchNormalizer>();
         builder.Services.AddSingleton<ITokenizer, Tokenizer>();
         builder.Services.AddSingleton<ISourceReferenceResolver, SourceReferenceResolver>();
@@ -66,6 +68,15 @@ public class Program
         builder.Services.AddSingleton<IHighlightBuilder, HighlightBuilder>();
         builder.Services.AddSingleton<IRankingConfiguration, RankingConfiguration>();
         builder.Services.AddSingleton<SuggestionIndex>();
+
+        // Dynamic discovery components registered to KnowledgeCatalog
+        builder.Services.AddScoped<ISourceSearcher, QuranSearcher>();
+        builder.Services.AddScoped<ISourceSearcher, HadithSearcher>();
+        builder.Services.AddSingleton<ICitationStrategy, QuranCitationStrategy>();
+        builder.Services.AddSingleton<ICitationStrategy, HadithCitationStrategy>();
+
+        builder.Services.AddScoped<ICitationFormatter, CitationFormatter>();
+        builder.Services.AddScoped<KnowledgeCatalog>();
 
         builder.Services.AddScoped<IRankingEngine, RankingEngine>();
         builder.Services.AddScoped<IEvidenceBuilder, EvidenceBuilder>();

@@ -6,5 +6,5 @@ namespace IslamicApp.Application.Research.Interfaces;
 
 public interface ISearchPipelineStage
 {
-    Task ExecuteAsync(SearchContext context, CancellationToken cancellationToken);
+    Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken);
 }
