@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "1.0",
+  "dataset": {
+    "name": "Quran-JSON",
+    "edition": "Complete Arabic text with translation & transliteration",
+    "version": "3.1.2",
+    "license": "CC-BY-4.0",
+    "sourceUrl": "https://github.com/risan/quran-json"
+  },
+  "files": [
+    {
+      "path": "dist/quran.json",
+      "expectedChecksum": "d8a8adff387f60ce3ff7dbe3238dd9b27120bfe29d8fcb07ad2e89cad37cefd4"
+    },
+    {
+      "path": "dist/quran_bn.json",
+      "expectedChecksum": "894086074f0e637d0488de1e6cb48a729dd60d38bfde3326bb6a2c66bf171a71"
+    },
+    {
+      "path": "dist/quran_en.json",
+      "expectedChecksum": "bae3acab517304dc2684d65949a00f31000a92818041cefabc234663da99d7a3"
+    },
+    {
+      "path": "dist/quran_es.json",
+      "expectedChecksum": "3232ba080fa1a04d23cc174550e84554af89fdcd2ff59b8870aef2267d0cd7c0"
+    },
+    {
+      "path": "dist/quran_fr.json",
+      "expectedChecksum": "2efc6d899d9504d63c4d62efa4fc89d38f99105237b7030b01b12f24bc1ebb8e"
+    },
+    {
+      "path": "dist/quran_id.json",
+      "expectedChecksum": "75d4672e11a638fc4e374df2ee9fa4d2257c562de9a5eb824532514e5c59d0ee"
+    },
+    {
+      "path": "dist/quran_ru.json",
+      "expectedChecksum": "b04ec3408c6edd3c4ff2d5794eab4b63ee5363f1eb6ca0969663624e877346e2"
+    },
+    {
+      "path": "dist/quran_sv.json",
+      "expectedChecksum": "60a3051fd522ddb32295d3a9837826e131db0607a9143c0c65bac153c6d723a7"
+    },
+    {
+      "path": "dist/quran_tr.json",
+      "expectedChecksum": "53c9772e2d4579ea290318302ba25aee2c74bef9537cbc360d7988d003e57fe1"
+    },
+    {
+      "path": "dist/quran_transliteration.json",
+      "expectedChecksum": "36369741f23fe2b64fdcca39d047659256dab7b40f1717aefcb6198c514313a0"
+    },
+    {
+      "path": "dist/quran_ur.json",
+      "expectedChecksum": "fe9c2ff72c287b3df8390b16eb27bb6de0210f20b417a5659b1fbdc29e58325f"
+    },
+    {
+      "path": "dist/quran_zh.json",
+      "expectedChecksum": "0646a4794227cfbcd45f23b86328e7b9617bfbcce9571e91f87360495b11ef6c"
+    }
+  ],
+  "supportedTranslators": {
+    "bn": "Bengali Translator",
+    "en": "Sahih International",
+    "es": "Muhammad Isa García",
+    "fr": "Muhammad Hamidullah",
+    "id": "Kementerian Agama",
+    "ru": "Elmir Kuliev",
+    "sv": "Knut Bernström",
+    "tr": "Diyanet İşleri",
+    "ur": "Abul A'la Maududi",
+    "zh": "Ma Jian"
+  }
+}

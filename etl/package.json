@@ -1,0 +1,21 @@
+{
+  "name": "islamic-app-etl",
+  "version": "1.0.0",
+  "description": "ETL pipeline for importing islamic app primary datasets into PostgreSQL.",
+  "main": "dist/index.js",
+  "scripts": {
+    "etl:quran": "ts-node src/run.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.12.1",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "prisma": "^5.12.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Dataset {
+  id         String          @id @default(cuid())
+  name       String
+  edition    String
+  version    String
+  source     String
+  license    String
+  checksum   String
+  importedAt DateTime        @default(now())
+  sessions   ImportSession[]
+}
+
+model ImportSession {
+  id            String   @id @default(cuid())
+  datasetId     String
+  dataset       Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  startedAt     DateTime
+  completedAt   DateTime
+  status        String
+  durationMs    Int
+  warnings      String[]
+  errors        String[]
+  memoryUsageMb Float
+}
+
+model Surah {
+  id              String       @id @default(cuid())
+  number          Int          @unique
+  arabicName      String
+  transliteration String
+  englishName     String
+  revelationType  String
+  totalVerses     Int
+  verses          QuranVerse[]
+}
+
+model QuranVerse {
+  id              String             @id @default(cuid())
+  globalIndex     Int                @unique
+  surahNumber     Int
+  surah           Surah              @relation(fields: [surahNumber], references: [number], onDelete: Cascade)
+  ayahNumber      Int
+  arabicText      String
+  arabicCleaned   String
+  transliteration String
+  translations    QuranTranslation[]
+
+  @@unique([surahNumber, ayahNumber])
+  @@index([surahNumber, ayahNumber])
+}
+
+model QuranTranslation {
+  id         String     @id @default(cuid())
+  verseId    String
+  verse      QuranVerse @relation(fields: [verseId], references: [id], onDelete: Cascade)
+  language   String
+  translator String
+  text       String
+
+  @@index([verseId, language])
+}
