@@ -12,6 +12,8 @@ using IslamicApp.Application.Services;
 using IslamicApp.Infrastructure.Persistence;
 using IslamicApp.Infrastructure.Persistence.Repositories;
 using IslamicApp.WebApi.Middleware;
+using IslamicApp.Application.Research.Interfaces;
+using IslamicApp.Infrastructure.Search;
 
 namespace IslamicApp.WebApi;
 
@@ -56,6 +58,29 @@ public class Program
         builder.Services.AddScoped<IEvidenceService, EvidenceService>();
         builder.Services.AddScoped<IHealthService, HealthService>();
 
+        // Register Milestone 3.5 Research Search Engine components
+        builder.Services.AddSingleton<ISearchNormalizer, SearchNormalizer>();
+        builder.Services.AddSingleton<ITokenizer, Tokenizer>();
+        builder.Services.AddSingleton<ISourceReferenceResolver, SourceReferenceResolver>();
+        builder.Services.AddSingleton<ISynonymEngine, SynonymEngine>();
+        builder.Services.AddSingleton<IHighlightBuilder, HighlightBuilder>();
+        builder.Services.AddSingleton<IRankingConfiguration, RankingConfiguration>();
+        builder.Services.AddSingleton<SuggestionIndex>();
+
+        builder.Services.AddScoped<IRankingEngine, RankingEngine>();
+        builder.Services.AddScoped<IEvidenceBuilder, EvidenceBuilder>();
+        builder.Services.AddScoped<ISearchPipeline, SearchPipeline>();
+        builder.Services.AddScoped<IResearchService, ResearchService>();
+
+        // Register Pipeline Stages
+        builder.Services.AddScoped<NormalizeStage>();
+        builder.Services.AddScoped<TokenizeStage>();
+        builder.Services.AddScoped<SynonymExpansionStage>();
+        builder.Services.AddScoped<ReferenceResolutionStage>();
+        builder.Services.AddScoped<DatabaseQueryStage>();
+        builder.Services.AddScoped<RankingStage>();
+        builder.Services.AddScoped<EvidenceBuildStage>();
+
         builder.Services.AddControllers();
 
         // Setup API Versioning
@@ -91,6 +116,17 @@ public class Program
         });
 
         var app = builder.Build();
+
+        // 1. Startup health check verify search configurations exist
+        VerifySearchConfigurationsExist();
+
+        // 2. Pre-initialize suggestion trie index in-memory
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var index = app.Services.GetRequiredService<SuggestionIndex>();
+            index.InitializeAsync(db).GetAwaiter().GetResult();
+        }
 
         // Register custom middlewares
         app.UseMiddleware<CorrelationIdMiddleware>();
@@ -205,5 +241,49 @@ public class Program
         {
             // Ignore error
         }
+    }
+
+    private static void VerifySearchConfigurationsExist()
+    {
+        var requiredFiles = new[] { "aliases.json", "synonyms.json", "ranking.json", "stopwords.json", "surah-names.json" };
+        foreach (var file in requiredFiles)
+        {
+            try
+            {
+                FindConfigPath(file);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Critical startup failure: Search configuration file {file} is missing.", ex);
+            }
+        }
+    }
+
+    private static string FindConfigPath(string fileName)
+    {
+        var current = AppContext.BaseDirectory;
+        while (!string.IsNullOrEmpty(current))
+        {
+            var configDir = Path.Combine(current, "Configuration", "Search");
+            if (Directory.Exists(configDir))
+            {
+                var filePath = Path.Combine(configDir, fileName);
+                if (File.Exists(filePath))
+                    return filePath;
+            }
+
+            var rootConfigDir = Path.Combine(current, "backend", "Configuration", "Search");
+            if (Directory.Exists(rootConfigDir))
+            {
+                var filePath = Path.Combine(rootConfigDir, fileName);
+                if (File.Exists(filePath))
+                    return filePath;
+            }
+
+            var parent = Directory.GetParent(current);
+            if (parent == null || parent.FullName == current) break;
+            current = parent.FullName;
+        }
+        throw new FileNotFoundException($"Configuration file {fileName} not found.");
     }
 }

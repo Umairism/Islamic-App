@@ -1,0 +1,39 @@
+{
+  "charity": [
+    { "term": "zakat", "weight": 1.0 },
+    { "term": "sadaqah", "weight": 0.8 },
+    { "term": "tax", "weight": 0.4 }
+  ],
+  "parents": [
+    { "term": "parents", "weight": 1.0 },
+    { "term": "father", "weight": 0.8 },
+    { "term": "mother", "weight": 0.8 },
+    { "term": "parent", "weight": 0.9 },
+    { "term": "walidain", "weight": 0.8 }
+  ],
+  "mother": [
+    { "term": "mother", "weight": 1.0 },
+    { "term": "mom", "weight": 0.9 },
+    { "term": "mum", "weight": 0.9 },
+    { "term": "walidah", "weight": 0.8 }
+  ],
+  "fasting": [
+    { "term": "fasting", "weight": 1.0 },
+    { "term": "fast", "weight": 0.9 },
+    { "term": "sawm", "weight": 0.8 },
+    { "term": "ramadan", "weight": 0.7 }
+  ],
+  "marriage": [
+    { "term": "marriage", "weight": 1.0 },
+    { "term": "marry", "weight": 0.9 },
+    { "term": "nikah", "weight": 0.8 },
+    { "term": "wife", "weight": 0.6 },
+    { "term": "husband", "weight": 0.6 }
+  ],
+  "prayer": [
+    { "term": "prayer", "weight": 1.0 },
+    { "term": "prayers", "weight": 0.9 },
+    { "term": "salah", "weight": 0.8 },
+    { "term": "salat", "weight": 0.8 }
+  ]
+}
