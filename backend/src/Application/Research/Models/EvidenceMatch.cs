@@ -15,4 +15,8 @@ public class EvidenceMatch
     public double Score { get; set; }
     public List<string> Reasons { get; } = new();
     public List<string> MatchedTerms { get; } = new();
+    public EvidenceConfidence? Confidence { get; set; }
+    public SearchExplanation? Explanation { get; set; }
+    public string DatasetId { get; set; } = string.Empty;
+    public string ImportSessionId { get; set; } = string.Empty;
 }

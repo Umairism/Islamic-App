@@ -16,6 +16,8 @@ using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Infrastructure.Search;
 using IslamicApp.Application.Research.Catalog;
 using IslamicApp.Infrastructure.Search.Citation;
+using IslamicApp.Infrastructure.Search.CrossReference;
+using IslamicApp.Infrastructure.Search.Export;
 
 namespace IslamicApp.WebApi;
 
@@ -82,6 +84,16 @@ public class Program
         builder.Services.AddScoped<IEvidenceBuilder, EvidenceBuilder>();
         builder.Services.AddScoped<ISearchPipeline, SearchPipeline>();
         builder.Services.AddScoped<IResearchService, ResearchService>();
+
+        // Register Milestone 5 dynamic Cross-Reference and OCP Export Formatters
+        builder.Services.AddScoped<ICrossReferenceProvider, QuranCrossReferenceProvider>();
+        builder.Services.AddScoped<ICrossReferenceProvider, HadithCrossReferenceProvider>();
+        builder.Services.AddScoped<ICrossReferenceEngine, CrossReferenceEngine>();
+
+        builder.Services.AddScoped<IExportFormatter, JsonExportFormatter>();
+        builder.Services.AddScoped<IExportFormatter, MarkdownExportFormatter>();
+        builder.Services.AddScoped<IExportFormatter, HtmlExportFormatter>();
+        builder.Services.AddScoped<IExportEngine, ExportEngine>();
 
         // Register Pipeline Stages
         builder.Services.AddScoped<NormalizeStage>();

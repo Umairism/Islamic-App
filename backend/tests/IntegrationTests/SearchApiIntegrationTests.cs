@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.WebApi.Controllers;
 
 namespace IslamicApp.IntegrationTests;
 
@@ -144,5 +145,73 @@ public class SearchApiIntegrationTests : IClassFixture<WebApplicationFactory<Web
         var response = await _client.GetAsync("/api/v1/search?q=");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetDossier_ReturnsStructuredResearchDossier()
+    {
+        var response = await _client.GetAsync("/api/v1/research/dossier?q=2:255");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<ResearchDossier>>();
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
+
+        var dossier = result.Data;
+        Assert.Equal("2:255", dossier.Query);
+        Assert.NotEmpty(dossier.EvidenceSections[EvidenceSection.Primary]);
+        Assert.NotEmpty(dossier.PipelineTimeline);
+        Assert.Equal("Success", dossier.PipelineTimeline[0].Status);
+    }
+
+    [Fact]
+    public async Task Export_ReturnsDossierMarkdownReport()
+    {
+        var response = await _client.GetAsync("/api/v1/research/export?q=2:255&format=markdown");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("# Research Dossier: 2:255", content);
+        Assert.Contains("Section: Primary", content);
+    }
+
+    [Fact]
+    public async Task GetGraph_ReturnsNodesAndEdgesJson()
+    {
+        var response = await _client.GetAsync("/api/v1/research/graph?q=2:255");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<GraphResponseDto>>();
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
+
+        var graph = result.Data;
+        Assert.NotEmpty(graph.Nodes);
+        Assert.NotEmpty(graph.Edges);
+        Assert.Contains(graph.Nodes, n => n.Id == "query");
+    }
+
+    [Fact]
+    public async Task GetRelationships_ReturnsSupportedTypes()
+    {
+        var response = await _client.GetAsync("/api/v1/research/relationships");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<List<string>>>();
+        Assert.NotNull(result);
+        Assert.NotEmpty(result.Data);
+        Assert.Contains("Explains", result.Data);
+    }
+
+    [Fact]
+    public async Task GetEvidenceById_ReturnsSingleEvidenceItem()
+    {
+        var response = await _client.GetAsync("/api/v1/evidence/2:255");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<EvidenceItem>>();
+        Assert.NotNull(result);
+        Assert.Equal(EvidenceSource.Quran, result.Data.Source);
+        Assert.Equal("Qur'an 2:255", result.Data.Reference);
     }
 }

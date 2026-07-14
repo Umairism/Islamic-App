@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Xunit;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
@@ -8,6 +9,8 @@ using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Catalog;
 using IslamicApp.Infrastructure.Search;
 using IslamicApp.Infrastructure.Search.Citation;
+using IslamicApp.Infrastructure.Search.CrossReference;
+using IslamicApp.Infrastructure.Search.Export;
 using IslamicApp.Application.DTOs;
 
 namespace IslamicApp.UnitTests;
@@ -181,5 +184,96 @@ public class SearchEngineTests
         var hadithIdentAr = new KnowledgeIdentifier(EvidenceSource.Hadith, "صحيح البخاري", "1", "1", "54", "ar");
         string hadithAr = formatter.Format(hadithIdentAr, new EvidenceMetadata("Bukhari", "Darussalam", "Muhsin Khan", "ar", "2025.01", "chk"));
         Assert.Equal("صحيح البخاري، كتاب 1، حديث 54", hadithAr);
+    }
+
+    [Fact]
+    public async Task QuranCrossReferenceProvider_ResolvesReferencesCorrectly()
+    {
+        var provider = new QuranCrossReferenceProvider();
+        var refs = await provider.GetReferencesAsync("2:255", CancellationToken.None);
+
+        Assert.NotEmpty(refs);
+        Assert.Contains(refs, r => r.Reference == "3:2" && r.Relationship == EvidenceRelationshipType.Similar);
+        Assert.Contains(refs, r => r.Reference == "2:256" && r.Relationship == EvidenceRelationshipType.Contextualizes);
+    }
+
+    [Fact]
+    public async Task HadithCrossReferenceProvider_ResolvesCitationsCorrectly()
+    {
+        var provider = new HadithCrossReferenceProvider();
+        var refs = await provider.GetReferencesAsync("54", CancellationToken.None);
+
+        Assert.NotEmpty(refs);
+        Assert.Contains(refs, r => r.Source == EvidenceSource.Quran && r.Reference == "2:83" && r.Relationship == EvidenceRelationshipType.Supports);
+    }
+
+    [Fact]
+    public void EvidenceConfidence_RankingScoreAndOverallConfidenceSeparated()
+    {
+        var mockConfig = new MockRankingConfiguration();
+        var engine = new RankingEngine(mockConfig);
+
+        var query = new SearchQuery("parents", new SearchOptions());
+        var candidate = new EvidenceMatch
+        {
+            Source = EvidenceSource.Quran,
+            Collection = "Quran",
+            Reference = "2:83",
+            PrimaryText = "وبالوالدين إحسانا",
+            Translations = new List<TranslationDto>
+            {
+                new() { Language = "en", Translator = "Pickthall", Text = "Be good to parents" }
+            },
+            Metadata = new EvidenceMetadata("Quran-JSON", "Sahih International", "Sahih International", "en", "3.1.2", "chk")
+        };
+
+        var context = new SearchContext(query, query.Options)
+        {
+            NormalizedQuery = "parents",
+            UniqueTokens = new List<string> { "parents" },
+            Candidates = new List<EvidenceMatch> { candidate }
+        };
+
+        var updatedContext = engine.Rank(context);
+        var item = updatedContext.RankedCandidatesList[0];
+
+        Assert.NotNull(item.Confidence);
+        Assert.Equal(82.0, item.Confidence.RankingScore); // 80 base + 2.0 priority boost
+        Assert.Equal(88.0, item.Confidence.OverallConfidence); // exact phrase match overall confidence
+        Assert.Equal("Primary (Divine Revelation)", item.Confidence.SourceAuthority);
+    }
+
+    [Fact]
+    public void ExportFormatters_ConvertDossierToTargets()
+    {
+        var dossier = new ResearchDossier(
+            Query: "parents",
+            Summary: "Summary of parent rights",
+            EvidenceSections: new Dictionary<EvidenceSection, List<ResearchEvidenceItem>>
+            {
+                { EvidenceSection.Primary, new List<ResearchEvidenceItem>() }
+            },
+            PipelineTimeline: new List<PipelineProfilerStep>(),
+            Diagnostics: new SearchDiagnostics(),
+            ProvenanceList: new List<ResearchProvenance>(),
+            ExportMetadata: new ExportMetadata(DateTime.UtcNow, Guid.NewGuid(), "1.0", "v1", 10.0, new List<string>(), "en")
+        );
+
+        var formatters = new List<IExportFormatter>
+        {
+            new JsonExportFormatter(),
+            new MarkdownExportFormatter(),
+            new HtmlExportFormatter()
+        };
+        var engine = new ExportEngine(formatters);
+
+        string markdownOutput = engine.Export(dossier, "markdown");
+        Assert.Contains("# Research Dossier: parents", markdownOutput);
+
+        string jsonOutput = engine.Export(dossier, "json");
+        Assert.Contains("\"query\": \"parents\"", jsonOutput);
+
+        string htmlOutput = engine.Export(dossier, "html");
+        Assert.Contains("<h1>Research Dossier: parents</h1>", htmlOutput);
     }
 }

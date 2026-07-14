@@ -69,4 +69,61 @@ public class EvidenceBuilder : IEvidenceBuilder
             Related: new List<RelatedEvidence>() // Reserved placeholder for future cross-source semantic mappings
         );
     }
+
+    public ResearchEvidenceItem BuildResearchItem(EvidenceMatch match, List<CrossReferenceItem> crossRefs)
+    {
+        string book = null;
+        string verseOrHadithNum = match.Reference;
+
+        if (match.Reference.Contains(":"))
+        {
+            var parts = match.Reference.Split(':');
+            book = parts[0];
+            verseOrHadithNum = parts[1];
+        }
+
+        var identifier = new KnowledgeIdentifier(
+            Source: match.Source,
+            Collection: match.Source == EvidenceSource.Quran ? "Quran" : match.Collection,
+            Book: book,
+            Chapter: "1",
+            VerseOrHadithNumber: verseOrHadithNum,
+            Language: "en"
+        );
+
+        string formattedCitation = _citationFormatter.Format(identifier, match.Metadata);
+
+        string datasetId = string.IsNullOrEmpty(match.DatasetId) ? 
+            (match.Source == EvidenceSource.Quran ? "quran-json" : "hadith-sahih-al-bukhari") : match.DatasetId;
+        string importSessionId = string.IsNullOrEmpty(match.ImportSessionId) ? "default-session" : match.ImportSessionId;
+
+        var confidence = match.Confidence ?? new EvidenceConfidence(
+            SourceAuthority: match.Source == EvidenceSource.Quran ? "Primary (Divine Revelation)" : "Secondary (Authentic Narration)",
+            TextMatch: 0,
+            ReferenceMatch: 0,
+            RankingScore: match.Score,
+            OverallConfidence: 50.0
+        );
+
+        var explanation = match.Explanation ?? new SearchExplanation(
+            TokenMatches: match.MatchedTerms,
+            ReferenceMatches: new List<string>(),
+            Boosts: new List<string>(),
+            Penalties: new List<string>(),
+            RankingFactors: new Dictionary<string, double>()
+        );
+
+        return new ResearchEvidenceItem(
+            Source: match.Source,
+            Collection: match.Collection,
+            Reference: formattedCitation,
+            PrimaryText: match.PrimaryText,
+            Translations: match.Translations,
+            DatasetId: datasetId,
+            ImportSessionId: importSessionId,
+            Confidence: confidence,
+            Explanation: explanation,
+            CrossReferences: crossRefs ?? new List<CrossReferenceItem>()
+        );
+    }
 }

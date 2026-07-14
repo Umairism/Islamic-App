@@ -28,6 +28,13 @@ public class RankingEngine : IRankingEngine
             double maxScore = 0;
             var reasons = new List<string>();
             var matchedTerms = new List<string>();
+            
+            double textMatchScore = 0;
+            double refMatchScore = 0;
+            
+            var boosts = new List<string>();
+            var penalties = new List<string>();
+            var strategies = new List<string>();
 
             // 1. Reference Match Check
             if (context.ResolvedReference != null && 
@@ -38,10 +45,13 @@ public class RankingEngine : IRankingEngine
                     string.Equals(t, "kursi", StringComparison.OrdinalIgnoreCase));
                 
                 double refScore = isAlias ? _config.Alias : _config.Reference;
+                refMatchScore = isAlias ? 95 : 100;
+                
                 if (refScore > maxScore)
                 {
                     maxScore = refScore;
                     reasons.Add(isAlias ? "Alias reference match" : "Exact reference match");
+                    strategies.Add(isAlias ? "AliasMatch" : "ExactReferenceMatch");
                 }
             }
 
@@ -52,10 +62,12 @@ public class RankingEngine : IRankingEngine
             if (!string.IsNullOrWhiteSpace(context.NormalizedQuery) && 
                 cleanArabic.Contains(context.NormalizedQuery, StringComparison.OrdinalIgnoreCase))
             {
+                textMatchScore = 100;
                 if (_config.Arabic > maxScore)
                 {
                     maxScore = _config.Arabic;
                     reasons.Add("Exact Arabic phrase match");
+                    strategies.Add("ExactArabicMatch");
                 }
                 matchedTerms.Add(context.NormalizedQuery);
             }
@@ -66,10 +78,12 @@ public class RankingEngine : IRankingEngine
                 if (!string.IsNullOrWhiteSpace(context.NormalizedQuery) && 
                     translation.Text.Contains(context.NormalizedQuery, StringComparison.OrdinalIgnoreCase))
                 {
+                    textMatchScore = 100;
                     if (_config.Translation > maxScore)
                     {
                         maxScore = _config.Translation;
                         reasons.Add($"Exact translation match in {translation.Language}");
+                        strategies.Add("ExactTranslationMatch");
                     }
                     matchedTerms.Add(context.NormalizedQuery);
                 }
@@ -81,11 +95,13 @@ public class RankingEngine : IRankingEngine
                 // Arabic token match
                 if (cleanArabic.Contains(token, StringComparison.OrdinalIgnoreCase))
                 {
+                    textMatchScore = Math.Max(textMatchScore, 40);
                     double score = _config.Partial;
                     if (score > maxScore)
                     {
                         maxScore = score;
                         reasons.Add($"Partial Arabic match for term: {token}");
+                        strategies.Add("PartialArabicMatch");
                     }
                     matchedTerms.Add(token);
                 }
@@ -95,11 +111,13 @@ public class RankingEngine : IRankingEngine
                 {
                     if (trans.Text.Contains(token, StringComparison.OrdinalIgnoreCase))
                     {
+                        textMatchScore = Math.Max(textMatchScore, 40);
                         double score = _config.Partial;
                         if (score > maxScore)
                         {
                             maxScore = score;
                             reasons.Add($"Partial translation match for term: {token}");
+                            strategies.Add("PartialTranslationMatch");
                         }
                         matchedTerms.Add(token);
                     }
@@ -116,11 +134,13 @@ public class RankingEngine : IRankingEngine
                 {
                     if (trans.Text.Contains(expandedToken, StringComparison.OrdinalIgnoreCase))
                     {
+                        textMatchScore = Math.Max(textMatchScore, 30);
                         double score = _config.Synonym;
                         if (score > maxScore)
                         {
                             maxScore = score;
                             reasons.Add($"Synonym match for expanded term: {expandedToken}");
+                            strategies.Add("SynonymMatch");
                         }
                         matchedTerms.Add(expandedToken);
                     }
@@ -132,11 +152,43 @@ public class RankingEngine : IRankingEngine
             {
                 // Assign a subtle boost for primary source
                 maxScore = Math.Min(100.0, maxScore + 2.0);
+                boosts.Add("Quran Divine Revelation Source Priority (+2.0)");
             }
 
             candidate.Score = maxScore;
             candidate.Reasons.AddRange(reasons.Distinct());
             candidate.MatchedTerms.AddRange(matchedTerms.Distinct());
+
+            // Build Structured Explanation
+            candidate.Explanation = new SearchExplanation(
+                TokenMatches: matchedTerms.Distinct().ToList(),
+                ReferenceMatches: context.ResolvedReference != null ? new List<string> { context.ResolvedReference.FormattedReference } : new List<string>(),
+                Boosts: boosts,
+                Penalties: penalties,
+                RankingFactors: new Dictionary<string, double>
+                {
+                    { "TextMatchWeight", textMatchScore },
+                    { "ReferenceMatchWeight", refMatchScore },
+                    { "BaseScore", maxScore }
+                }
+            );
+
+            // Compute Structured EvidenceConfidence
+            string authority = candidate.Source == EvidenceSource.Quran ? "Primary (Divine Revelation)" : "Secondary (Authentic Narration)";
+            
+            double overallConfidence = 0;
+            if (refMatchScore == 100) overallConfidence = candidate.Source == EvidenceSource.Quran ? 98.0 : 92.0;
+            else if (refMatchScore == 95) overallConfidence = candidate.Source == EvidenceSource.Quran ? 95.0 : 88.0;
+            else if (textMatchScore == 100) overallConfidence = candidate.Source == EvidenceSource.Quran ? 88.0 : 82.0;
+            else overallConfidence = Math.Clamp(maxScore * 0.9, 0, 100);
+
+            candidate.Confidence = new EvidenceConfidence(
+                SourceAuthority: authority,
+                TextMatch: textMatchScore,
+                ReferenceMatch: refMatchScore,
+                RankingScore: maxScore,
+                OverallConfidence: overallConfidence
+            );
 
             rankedList.Add(candidate);
         }

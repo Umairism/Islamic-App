@@ -16,6 +16,7 @@ public record SearchContext(
     IReadOnlyList<EvidenceMatch>? Candidates = null,
     IReadOnlyList<EvidenceMatch>? RankedCandidates = null,
     IReadOnlyList<EvidenceItem>? EvidenceItems = null,
+    IReadOnlyList<ResearchEvidenceItem>? ResearchEvidenceItems = null,
     SearchDiagnostics? Diagnostics = null
 )
 {
@@ -26,5 +27,6 @@ public record SearchContext(
     public IReadOnlyList<EvidenceMatch> CandidatesList => Candidates ?? ImmutableList<EvidenceMatch>.Empty;
     public IReadOnlyList<EvidenceMatch> RankedCandidatesList => RankedCandidates ?? ImmutableList<EvidenceMatch>.Empty;
     public IReadOnlyList<EvidenceItem> EvidenceItemsList => EvidenceItems ?? ImmutableList<EvidenceItem>.Empty;
+    public IReadOnlyList<ResearchEvidenceItem> ResearchEvidenceItemsList => ResearchEvidenceItems ?? ImmutableList<ResearchEvidenceItem>.Empty;
     public SearchDiagnostics DiagnosticsValue => Diagnostics ?? new SearchDiagnostics();
 }

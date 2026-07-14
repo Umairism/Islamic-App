@@ -7,4 +7,5 @@ namespace IslamicApp.Application.Research.Interfaces;
 public interface ISearchPipeline
 {
     Task<SearchContext> ExecuteAsync(SearchContext context, CancellationToken cancellationToken);
+    Task<ProfilerResult> ExecuteWithProfilingAsync(SearchContext context, CancellationToken cancellationToken);
 }
