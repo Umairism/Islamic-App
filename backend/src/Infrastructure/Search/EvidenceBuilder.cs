@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
@@ -8,119 +10,61 @@ namespace IslamicApp.Infrastructure.Search;
 
 public class EvidenceBuilder : IEvidenceBuilder
 {
-    private readonly IHighlightBuilder _highlightBuilder;
     private readonly ICitationFormatter _citationFormatter;
 
-    public EvidenceBuilder(IHighlightBuilder highlightBuilder, ICitationFormatter citationFormatter)
+    public EvidenceBuilder(ICitationFormatter citationFormatter)
     {
-        _highlightBuilder = highlightBuilder;
         _citationFormatter = citationFormatter;
     }
 
-    public EvidenceItem BuildItem(EvidenceMatch match)
+    public ResearchEvidenceItem BuildResearchItem(KnowledgeMatch match, List<CrossReferenceItem> crossRefs)
     {
-        var highlights = new List<string>();
+        if (match == null) throw new ArgumentNullException(nameof(match));
 
-        // Generate highlights from each translation matching terms
-        foreach (var trans in match.Translations)
-        {
-            var matchHighlights = _highlightBuilder.BuildHighlights(trans.Text, match.MatchedTerms);
-            if (matchHighlights != null && matchHighlights.Count > 0)
-            {
-                highlights.AddRange(matchHighlights);
-            }
-        }
+        string language = "en";
+        string formattedCitation = _citationFormatter.Format(match.Document.Reference, language);
 
-        // De-duplicate highlights
-        var finalHighlights = highlights.Distinct().Take(3).ToList();
+        string authority = match.Document.Source == EvidenceSource.Quran ? "Primary (Divine Revelation)" : "Secondary (Authentic Narration)";
+        
+        double textMatch = 0;
+        double referenceMatch = 0;
 
-        // Construct standard localized citation using citation formatter strategy orchestrator
-        string book = null;
-        string verseOrHadithNum = match.Reference;
+        var refContrib = match.Ranking.Contributions.FirstOrDefault(c => c.Factor == RankingFactor.ExactReference);
+        if (refContrib != null) referenceMatch = refContrib.Value * 100.0;
 
-        if (match.Reference.Contains(":"))
-        {
-            var parts = match.Reference.Split(':');
-            book = parts[0];
-            verseOrHadithNum = parts[1];
-        }
+        var textContrib = match.Ranking.Contributions.FirstOrDefault(c => c.Factor == RankingFactor.ExactWord || c.Factor == RankingFactor.Prefix);
+        if (textContrib != null) textMatch = textContrib.Value * 100.0;
 
-        var identifier = new KnowledgeIdentifier(
-            Source: match.Source,
-            Collection: match.Source == EvidenceSource.Quran ? "Quran" : match.Collection,
-            Book: book,
-            Chapter: "1", // Default chapter index relation placeholder
-            VerseOrHadithNumber: verseOrHadithNum,
-            Language: "en"
+        double overallConfidence = 0;
+        if (referenceMatch == 100) overallConfidence = match.Document.Source == EvidenceSource.Quran ? 98.0 : 92.0;
+        else if (referenceMatch == 95) overallConfidence = match.Document.Source == EvidenceSource.Quran ? 95.0 : 88.0;
+        else if (textMatch == 100) overallConfidence = match.Document.Source == EvidenceSource.Quran ? 88.0 : 82.0;
+        else overallConfidence = Math.Clamp(match.Ranking.FinalValue * 0.9, 0, 100);
+
+        var confidence = new EvidenceConfidence(
+            SourceAuthority: authority,
+            TextMatch: textMatch,
+            ReferenceMatch: referenceMatch,
+            RankingScore: match.Ranking.FinalValue,
+            OverallConfidence: overallConfidence
         );
 
-        string formattedCitation = _citationFormatter.Format(identifier, match.Metadata);
-
-        return new EvidenceItem(
-            Source: match.Source,
-            Collection: match.Collection,
-            Reference: formattedCitation,
-            PrimaryText: match.PrimaryText,
-            Translations: match.Translations,
-            Metadata: match.Metadata,
-            Score: match.Score,
-            Reasons: match.Reasons,
-            Highlights: finalHighlights,
-            Related: new List<RelatedEvidence>() // Reserved placeholder for future cross-source semantic mappings
-        );
-    }
-
-    public ResearchEvidenceItem BuildResearchItem(EvidenceMatch match, List<CrossReferenceItem> crossRefs)
-    {
-        string book = null;
-        string verseOrHadithNum = match.Reference;
-
-        if (match.Reference.Contains(":"))
-        {
-            var parts = match.Reference.Split(':');
-            book = parts[0];
-            verseOrHadithNum = parts[1];
-        }
-
-        var identifier = new KnowledgeIdentifier(
-            Source: match.Source,
-            Collection: match.Source == EvidenceSource.Quran ? "Quran" : match.Collection,
-            Book: book,
-            Chapter: "1",
-            VerseOrHadithNumber: verseOrHadithNum,
-            Language: "en"
-        );
-
-        string formattedCitation = _citationFormatter.Format(identifier, match.Metadata);
-
-        string datasetId = string.IsNullOrEmpty(match.DatasetId) ? 
-            (match.Source == EvidenceSource.Quran ? "quran-json" : "hadith-sahih-al-bukhari") : match.DatasetId;
-        string importSessionId = string.IsNullOrEmpty(match.ImportSessionId) ? "default-session" : match.ImportSessionId;
-
-        var confidence = match.Confidence ?? new EvidenceConfidence(
-            SourceAuthority: match.Source == EvidenceSource.Quran ? "Primary (Divine Revelation)" : "Secondary (Authentic Narration)",
-            TextMatch: 0,
-            ReferenceMatch: 0,
-            RankingScore: match.Score,
-            OverallConfidence: 50.0
-        );
-
-        var explanation = match.Explanation ?? new SearchExplanation(
-            TokenMatches: match.MatchedTerms,
-            ReferenceMatches: new List<string>(),
-            Boosts: new List<string>(),
+        var explanation = new SearchExplanation(
+            TokenMatches: match.MatchedTokens.ToList(),
+            ReferenceMatches: new List<string> { match.Document.Reference.ToDisplayString() },
+            Boosts: match.Ranking.Contributions.Where(c => c.Factor == RankingFactor.CollectionPriority).Select(c => $"Collection priority boost (+{c.Contribution:F1})").ToList(),
             Penalties: new List<string>(),
-            RankingFactors: new Dictionary<string, double>()
+            RankingFactors: match.Ranking.Contributions.GroupBy(c => c.Factor.ToString()).ToDictionary(g => g.Key, g => g.Max(c => c.Contribution))
         );
 
         return new ResearchEvidenceItem(
-            Source: match.Source,
-            Collection: match.Collection,
+            Source: match.Document.Source,
+            Collection: match.Document.Collection,
             Reference: formattedCitation,
-            PrimaryText: match.PrimaryText,
-            Translations: match.Translations,
-            DatasetId: datasetId,
-            ImportSessionId: importSessionId,
+            PrimaryText: match.Document.PrimaryText,
+            Translations: match.Document.Translations,
+            DatasetId: match.Document.DatasetId,
+            ImportSessionId: match.Document.ImportSessionId,
             Confidence: confidence,
             Explanation: explanation,
             CrossReferences: crossRefs ?? new List<CrossReferenceItem>()

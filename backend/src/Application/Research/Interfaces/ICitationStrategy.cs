@@ -6,5 +6,5 @@ namespace IslamicApp.Application.Research.Interfaces;
 public interface ICitationStrategy
 {
     EvidenceSource Source { get; }
-    string Format(KnowledgeIdentifier identifier, EvidenceMetadata metadata);
+    string Format(ResearchReference reference, string language);
 }

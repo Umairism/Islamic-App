@@ -4,5 +4,5 @@ namespace IslamicApp.Application.Research.Interfaces;
 
 public interface ICitationFormatter
 {
-    string Format(KnowledgeIdentifier identifier, EvidenceMetadata metadata);
+    string Format(ResearchReference reference, string language);
 }

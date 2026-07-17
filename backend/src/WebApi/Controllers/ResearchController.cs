@@ -47,14 +47,17 @@ public class ResearchController : ControllerBase
             });
         }
 
-        var options = new SearchOptions(
-            Page: page,
-            PageSize: pageSize,
-            IncludeTranslations: true
+        var request = new SearchRequest(
+            Query: q,
+            Language: ResearchLanguage.Auto,
+            Sources: new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith },
+            Pagination: new Pagination(page, pageSize),
+            IncludeCrossReferences: true,
+            IncludeExplanations: true,
+            SemanticSearchEnabled: false
         );
 
-        var query = new SearchQuery(q, options);
-        var dossier = await _researchService.ResearchAsync(query, cancellationToken);
+        var dossier = await _researchService.ResearchAsync(request, cancellationToken);
         return Ok(new ApiResponse<ResearchDossier>(dossier));
     }
 
@@ -79,9 +82,16 @@ public class ResearchController : ControllerBase
             });
         }
 
-        var options = new SearchOptions(Page: 1, PageSize: 20);
-        var query = new SearchQuery(q, options);
-        var dossier = await _researchService.ResearchAsync(query, cancellationToken);
+        var request = new SearchRequest(
+            Query: q,
+            Language: ResearchLanguage.Auto,
+            Sources: new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith },
+            Pagination: new Pagination(1, 20),
+            IncludeCrossReferences: true,
+            IncludeExplanations: true,
+            SemanticSearchEnabled: false
+        );
+        var dossier = await _researchService.ResearchAsync(request, cancellationToken);
 
         try
         {
@@ -132,9 +142,16 @@ public class ResearchController : ControllerBase
             });
         }
 
-        var options = new SearchOptions(Page: 1, PageSize: 20);
-        var query = new SearchQuery(q, options);
-        var dossier = await _researchService.ResearchAsync(query, cancellationToken);
+        var request = new SearchRequest(
+            Query: q,
+            Language: ResearchLanguage.Auto,
+            Sources: new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith },
+            Pagination: new Pagination(1, 20),
+            IncludeCrossReferences: true,
+            IncludeExplanations: true,
+            SemanticSearchEnabled: false
+        );
+        var dossier = await _researchService.ResearchAsync(request, cancellationToken);
 
         var nodes = new List<GraphNodeDto>();
         var edges = new List<GraphEdgeDto>();

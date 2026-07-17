@@ -9,6 +9,5 @@ namespace IslamicApp.Application.Research.Interfaces;
 public interface ISourceSearcher
 {
     EvidenceSource Source { get; }
-    SearcherCapabilities Capabilities { get; }
-    Task<List<EvidenceMatch>> SearchAsync(SearchContext context, CancellationToken cancellationToken);
+    Task<IReadOnlyList<KnowledgeMatch>> SearchAsync(SearchContext context, CancellationToken cancellationToken);
 }

@@ -9,22 +9,25 @@ public class HadithCitationStrategy : ICitationStrategy
 {
     public EvidenceSource Source => EvidenceSource.Hadith;
 
-    public string Format(KnowledgeIdentifier identifier, EvidenceMetadata metadata)
+    public string Format(ResearchReference reference, string language)
     {
-        if (identifier == null) return string.Empty;
+        if (reference == null) return string.Empty;
+        if (reference is not HadithReference href) return reference.ToDisplayString();
 
-        string lang = identifier.Language.Trim().ToLowerInvariant();
-        string collName = identifier.Collection; // e.g., "Sahih al-Bukhari" or "Sahih Muslim"
+        string lang = language?.Trim().ToLowerInvariant() ?? "en";
+        string collName = href.Collection;
 
         if (lang.StartsWith("ar"))
         {
-            // E.g., صحيح البخاري، كتاب 3، حديث 54
-            return $"{collName}، كتاب {identifier.Book}، حديث {identifier.VerseOrHadithNumber}";
+            if (collName.Contains("Bukhari", StringComparison.OrdinalIgnoreCase))
+                collName = "صحيح البخاري";
+            else if (collName.Contains("Muslim", StringComparison.OrdinalIgnoreCase))
+                collName = "صحيح مسلم";
+            return $"{collName}، كتاب {href.BookNumber}، حديث {href.HadithNumber}";
         }
         else
         {
-            // E.g., Sahih al-Bukhari Book 3, Hadith 54
-            return $"{collName} Book {identifier.Book}, Hadith {identifier.VerseOrHadithNumber}";
+            return $"{collName} Book {href.BookNumber}, Hadith {href.HadithNumber}";
         }
     }
 }

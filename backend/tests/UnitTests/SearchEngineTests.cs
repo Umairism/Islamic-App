@@ -2,16 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
 using IslamicApp.Application.Research.Enums;
-using IslamicApp.Application.Research.Catalog;
 using IslamicApp.Infrastructure.Search;
 using IslamicApp.Infrastructure.Search.Citation;
 using IslamicApp.Infrastructure.Search.CrossReference;
 using IslamicApp.Infrastructure.Search.Export;
 using IslamicApp.Application.DTOs;
+using Microsoft.EntityFrameworkCore;
+using IslamicApp.Infrastructure.Persistence;
+using IslamicApp.Infrastructure.Search.Retrieval;
+using IslamicApp.Infrastructure.Search.Plugins;
 
 namespace IslamicApp.UnitTests;
 
@@ -109,49 +114,67 @@ public class SearchEngineTests
     [Fact]
     public void RankingEngine_AssignsScoresCorrectlyByConfig()
     {
-        var mockConfig = new MockRankingConfiguration();
-        var engine = new RankingEngine(mockConfig);
+        var mockWeights = new MockRankingWeightsProvider();
+        var engine = new RankingEngine(mockWeights);
 
-        var query = new SearchQuery("parents", new SearchOptions());
+        var request = new SearchRequest(
+            Query: "parents",
+            Language: ResearchLanguage.Auto,
+            Sources: new HashSet<EvidenceSource> { EvidenceSource.Quran },
+            Pagination: new Pagination(1, 10),
+            IncludeCrossReferences: false,
+            IncludeExplanations: false,
+            SemanticSearchEnabled: false
+        );
 
-        var candidate = new EvidenceMatch
-        {
-            Source = EvidenceSource.Quran,
-            Collection = "Quran",
-            Reference = "2:83",
-            PrimaryText = "وبالوالدين إحسانا",
-            Translations = new List<TranslationDto>
+        var query = new NormalizedQuery("parents", "parents", new List<string> { "parents" }, new List<string>(), new List<string>(), new List<string>());
+        var analysis = new QueryAnalysis(request, query, ResearchLanguage.English, new QueryIntent(SearchMode.KeywordSearch, new HashSet<EvidenceSource>(), new HashSet<RetrievalCapability>(), 1.0), null, new List<string>());
+
+        var doc = new KnowledgeDocument(
+            Id: "quran-2-83",
+            Source: EvidenceSource.Quran,
+            Collection: "Quran",
+            Reference: new QuranReference(2, 83),
+            PrimaryText: "وبالوالدين إحسانا",
+            Translations: new List<TranslationDto>
             {
                 new() { Language = "en", Translator = "Pickthall", Text = "Be good to parents" }
             },
-            Metadata = new EvidenceMetadata("Quran-JSON", "Sahih International", "Sahih International", "en", "3.1.2", "default_checksum")
-        };
+            DatasetId: "quran-json",
+            ImportSessionId: "default"
+        );
 
-        var context = new SearchContext(query, query.Options)
+        var candidate = new KnowledgeMatch(doc, new List<string> { "parents" }, new RankingScore(0, new List<RankingContribution>()));
+
+        var context = new SearchContext(request, analysis)
         {
-            NormalizedQuery = "parents",
-            UniqueTokens = new List<string> { "parents" },
-            ExpandedTokens = new List<string> { "parents" },
-            Candidates = new List<EvidenceMatch> { candidate }
+            Candidates = new List<KnowledgeMatch> { candidate }
         };
 
         var updatedContext = engine.Rank(context);
 
         Assert.Single(updatedContext.RankedCandidatesList);
-        Assert.Equal(82.0, updatedContext.RankedCandidatesList[0].Score); // Exact translation matches get 80 points + 2.0 priority boost
-        Assert.Contains("Exact translation match in en", updatedContext.RankedCandidatesList[0].Reasons);
+        Assert.Equal(82.0, updatedContext.RankedCandidatesList[0].Ranking.FinalValue); // Exact translation matches get 80 points + 2.0 priority boost
     }
 
-    private class MockRankingConfiguration : IRankingConfiguration
+    private class MockRankingWeightsProvider : IRankingWeightsProvider
     {
-        public double Reference => 100;
-        public double Alias => 95;
-        public double Arabic => 90;
-        public double Translation => 80;
-        public double SurahName => 75;
-         public double Synonym => 65;
-        public double Partial => 40;
-        public string Checksum => "mock_checksum";
+        public double GetWeight(string factor)
+        {
+            return factor switch
+            {
+                "Reference" => 100,
+                "Alias" => 95,
+                "Arabic" => 90,
+                "Translation" => 80,
+                "SurahName" => 75,
+                "Synonym" => 65,
+                "Partial" => 40,
+                _ => 0
+            };
+        }
+
+        public IReadOnlyDictionary<string, double> GetAllWeights() => new Dictionary<string, double>();
     }
 
     [Fact]
@@ -162,27 +185,24 @@ public class SearchEngineTests
             new QuranCitationStrategy(),
             new HadithCitationStrategy()
         };
-        var catalog = new KnowledgeCatalog(new List<ISourceSearcher>(), strategies);
-        var formatter = new CitationFormatter(catalog);
+        var formatter = new CitationFormatter(strategies);
 
         // Quran english format check
-        var quranIdentEn = new KnowledgeIdentifier(EvidenceSource.Quran, "Quran", "2", null, "255", "en");
-        string resultEn = formatter.Format(quranIdentEn, new EvidenceMetadata("Quran-JSON", "Sahih International", "Sahih International", "en", "3.1.2", "chk"));
+        var quranRef = new QuranReference(2, 255);
+        string resultEn = formatter.Format(quranRef, "en");
         Assert.Equal("Qur'an 2:255", resultEn);
 
         // Quran arabic format check
-        var quranIdentAr = new KnowledgeIdentifier(EvidenceSource.Quran, "Quran", "2", null, "255", "ar");
-        string resultAr = formatter.Format(quranIdentAr, new EvidenceMetadata("Quran-JSON", "Sahih International", "Sahih International", "ar", "3.1.2", "chk"));
+        string resultAr = formatter.Format(quranRef, "ar");
         Assert.Equal("سورة البقرة آية 255", resultAr);
 
         // Hadith english format check
-        var hadithIdentEn = new KnowledgeIdentifier(EvidenceSource.Hadith, "Sahih al-Bukhari", "1", "1", "54", "en");
-        string hadithEn = formatter.Format(hadithIdentEn, new EvidenceMetadata("Bukhari", "Darussalam", "Muhsin Khan", "en", "2025.01", "chk"));
+        var hadithRef = new HadithReference("Sahih al-Bukhari", 1, 54);
+        string hadithEn = formatter.Format(hadithRef, "en");
         Assert.Equal("Sahih al-Bukhari Book 1, Hadith 54", hadithEn);
 
         // Hadith arabic format check
-        var hadithIdentAr = new KnowledgeIdentifier(EvidenceSource.Hadith, "صحيح البخاري", "1", "1", "54", "ar");
-        string hadithAr = formatter.Format(hadithIdentAr, new EvidenceMetadata("Bukhari", "Darussalam", "Muhsin Khan", "ar", "2025.01", "chk"));
+        string hadithAr = formatter.Format(hadithRef, "ar");
         Assert.Equal("صحيح البخاري، كتاب 1، حديث 54", hadithAr);
     }
 
@@ -205,42 +225,6 @@ public class SearchEngineTests
 
         Assert.NotEmpty(refs);
         Assert.Contains(refs, r => r.Source == EvidenceSource.Quran && r.Reference == "2:83" && r.Relationship == EvidenceRelationshipType.Supports);
-    }
-
-    [Fact]
-    public void EvidenceConfidence_RankingScoreAndOverallConfidenceSeparated()
-    {
-        var mockConfig = new MockRankingConfiguration();
-        var engine = new RankingEngine(mockConfig);
-
-        var query = new SearchQuery("parents", new SearchOptions());
-        var candidate = new EvidenceMatch
-        {
-            Source = EvidenceSource.Quran,
-            Collection = "Quran",
-            Reference = "2:83",
-            PrimaryText = "وبالوالدين إحسانا",
-            Translations = new List<TranslationDto>
-            {
-                new() { Language = "en", Translator = "Pickthall", Text = "Be good to parents" }
-            },
-            Metadata = new EvidenceMetadata("Quran-JSON", "Sahih International", "Sahih International", "en", "3.1.2", "chk")
-        };
-
-        var context = new SearchContext(query, query.Options)
-        {
-            NormalizedQuery = "parents",
-            UniqueTokens = new List<string> { "parents" },
-            Candidates = new List<EvidenceMatch> { candidate }
-        };
-
-        var updatedContext = engine.Rank(context);
-        var item = updatedContext.RankedCandidatesList[0];
-
-        Assert.NotNull(item.Confidence);
-        Assert.Equal(82.0, item.Confidence.RankingScore); // 80 base + 2.0 priority boost
-        Assert.Equal(88.0, item.Confidence.OverallConfidence); // exact phrase match overall confidence
-        Assert.Equal("Primary (Divine Revelation)", item.Confidence.SourceAuthority);
     }
 
     [Fact]

@@ -18,6 +18,8 @@ using IslamicApp.Application.Research.Catalog;
 using IslamicApp.Infrastructure.Search.Citation;
 using IslamicApp.Infrastructure.Search.CrossReference;
 using IslamicApp.Infrastructure.Search.Export;
+using IslamicApp.Infrastructure.Search.Retrieval;
+using IslamicApp.Infrastructure.Search.Plugins;
 
 namespace IslamicApp.WebApi;
 
@@ -62,32 +64,50 @@ public class Program
         builder.Services.AddScoped<IEvidenceService, EvidenceService>();
         builder.Services.AddScoped<IHealthService, HealthService>();
 
-        // Register Milestone 4 Research Search Engine & Knowledge Catalog components
+        // Register Milestone 6A refactored search configurations and dynamic sources
+        var configProvider = new SearchConfigurationProvider();
+        builder.Services.AddSingleton<ISynonymProvider>(configProvider);
+        builder.Services.AddSingleton<IAliasProvider>(configProvider);
+        builder.Services.AddSingleton<IStopWordProvider>(configProvider);
+        builder.Services.AddSingleton<IRankingWeightsProvider>(configProvider);
+
         builder.Services.AddSingleton<ISearchNormalizer, SearchNormalizer>();
         builder.Services.AddSingleton<ITokenizer, Tokenizer>();
         builder.Services.AddSingleton<ISourceReferenceResolver, SourceReferenceResolver>();
         builder.Services.AddSingleton<ISynonymEngine, SynonymEngine>();
         builder.Services.AddSingleton<IHighlightBuilder, HighlightBuilder>();
-        builder.Services.AddSingleton<IRankingConfiguration, RankingConfiguration>();
         builder.Services.AddSingleton<SuggestionIndex>();
 
-        // Dynamic discovery components registered to KnowledgeCatalog
-        builder.Services.AddScoped<ISourceSearcher, QuranSearcher>();
-        builder.Services.AddScoped<ISourceSearcher, HadithSearcher>();
-        builder.Services.AddSingleton<ICitationStrategy, QuranCitationStrategy>();
-        builder.Services.AddSingleton<ICitationStrategy, HadithCitationStrategy>();
+        // Dynamic capability searchers and citations strategies
+        builder.Services.AddScoped<QuranSearcher>();
+        builder.Services.AddScoped<HadithSearcher>();
+        builder.Services.AddScoped<ISourceSearcher>(sp => sp.GetRequiredService<QuranSearcher>());
+        builder.Services.AddScoped<ISourceSearcher>(sp => sp.GetRequiredService<HadithSearcher>());
+        builder.Services.AddSingleton<QuranCitationStrategy>();
+        builder.Services.AddSingleton<HadithCitationStrategy>();
+        builder.Services.AddSingleton<ICitationStrategy>(sp => sp.GetRequiredService<QuranCitationStrategy>());
+        builder.Services.AddSingleton<ICitationStrategy>(sp => sp.GetRequiredService<HadithCitationStrategy>());
 
         builder.Services.AddScoped<ICitationFormatter, CitationFormatter>();
         builder.Services.AddScoped<KnowledgeCatalog>();
 
+        // Dynamic knowledge sources (plugins)
+        builder.Services.AddScoped<IKnowledgeSource, QuranSource>();
+        builder.Services.AddScoped<IKnowledgeSource, HadithSource>();
+
+        builder.Services.AddScoped<IQueryAnalyzer, QueryAnalyzer>();
+        builder.Services.AddScoped<ILexicalRetriever, LexicalRetriever>();
+        builder.Services.AddScoped<IRetrievalOrchestrator, RetrievalOrchestrator>();
         builder.Services.AddScoped<IRankingEngine, RankingEngine>();
         builder.Services.AddScoped<IEvidenceBuilder, EvidenceBuilder>();
         builder.Services.AddScoped<ISearchPipeline, SearchPipeline>();
         builder.Services.AddScoped<IResearchService, ResearchService>();
 
         // Register Milestone 5 dynamic Cross-Reference and OCP Export Formatters
-        builder.Services.AddScoped<ICrossReferenceProvider, QuranCrossReferenceProvider>();
-        builder.Services.AddScoped<ICrossReferenceProvider, HadithCrossReferenceProvider>();
+        builder.Services.AddScoped<QuranCrossReferenceProvider>();
+        builder.Services.AddScoped<HadithCrossReferenceProvider>();
+        builder.Services.AddScoped<ICrossReferenceProvider>(sp => sp.GetRequiredService<QuranCrossReferenceProvider>());
+        builder.Services.AddScoped<ICrossReferenceProvider>(sp => sp.GetRequiredService<HadithCrossReferenceProvider>());
         builder.Services.AddScoped<ICrossReferenceEngine, CrossReferenceEngine>();
 
         builder.Services.AddScoped<IExportFormatter, JsonExportFormatter>();
@@ -96,10 +116,6 @@ public class Program
         builder.Services.AddScoped<IExportEngine, ExportEngine>();
 
         // Register Pipeline Stages
-        builder.Services.AddScoped<NormalizeStage>();
-        builder.Services.AddScoped<TokenizeStage>();
-        builder.Services.AddScoped<SynonymExpansionStage>();
-        builder.Services.AddScoped<ReferenceResolutionStage>();
         builder.Services.AddScoped<DatabaseQueryStage>();
         builder.Services.AddScoped<RankingStage>();
         builder.Services.AddScoped<EvidenceBuildStage>();

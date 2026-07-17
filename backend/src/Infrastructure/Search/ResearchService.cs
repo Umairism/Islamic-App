@@ -2,274 +2,164 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
 using IslamicApp.Infrastructure.Persistence;
-using IslamicApp.Application.DTOs;
 
 namespace IslamicApp.Infrastructure.Search;
 
 public class ResearchService : IResearchService
 {
+    private readonly IQueryAnalyzer _queryAnalyzer;
     private readonly ISearchPipeline _pipeline;
-    private readonly ISearchNormalizer _normalizer;
-    private readonly ITokenizer _tokenizer;
-    private readonly ISynonymEngine _synonymEngine;
-    private readonly ISourceReferenceResolver _resolver;
-    private readonly IRankingConfiguration _rankingConfig;
-    private readonly IEvidenceBuilder _evidenceBuilder;
     private readonly ApplicationDbContext _dbContext;
     private readonly SuggestionIndex _suggestionIndex;
-    private readonly ICrossReferenceEngine _crossReferenceEngine;
 
     public ResearchService(
+        IQueryAnalyzer queryAnalyzer,
         ISearchPipeline pipeline,
-        ISearchNormalizer normalizer,
-        ITokenizer tokenizer,
-        ISynonymEngine synonymEngine,
-        ISourceReferenceResolver resolver,
-        IRankingConfiguration rankingConfig,
-        IEvidenceBuilder evidenceBuilder,
         ApplicationDbContext dbContext,
-        SuggestionIndex suggestionIndex,
-        ICrossReferenceEngine crossReferenceEngine)
+        SuggestionIndex suggestionIndex)
     {
+        _queryAnalyzer = queryAnalyzer;
         _pipeline = pipeline;
-        _normalizer = normalizer;
-        _tokenizer = tokenizer;
-        _synonymEngine = synonymEngine;
-        _resolver = resolver;
-        _rankingConfig = rankingConfig;
-        _evidenceBuilder = evidenceBuilder;
         _dbContext = dbContext;
         _suggestionIndex = suggestionIndex;
-        _crossReferenceEngine = crossReferenceEngine;
     }
 
     public async Task<EvidenceDossier> SearchAsync(SearchQuery query, CancellationToken cancellationToken)
     {
-        var totalSw = Stopwatch.StartNew();
-        var context = new SearchContext(query, query.Options);
+        var sources = new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith };
+        var pagination = new Pagination(query.Options.Page, query.Options.PageSize);
+        var request = new SearchRequest(
+            Query: query.OriginalQuery,
+            Language: ResearchLanguage.Auto,
+            Sources: sources,
+            Pagination: pagination,
+            IncludeCrossReferences: false,
+            IncludeExplanations: false,
+            SemanticSearchEnabled: false
+        );
 
-        // Execute Search Pipeline
-        context = await _pipeline.ExecuteAsync(context, cancellationToken);
-        totalSw.Stop();
+        var analysis = await _queryAnalyzer.AnalyzeAsync(request);
+        var context = new SearchContext(request, analysis);
 
-        // Trace execution statistics and checksums
-        string tokenizerChk = (_tokenizer as Tokenizer)?.Checksum ?? "n/a";
-        string synonymChk = (_synonymEngine as SynonymEngine)?.Checksum ?? "n/a";
-        string aliasChk = (_resolver as SourceReferenceResolver)?.AliasChecksum ?? "n/a";
-        string rankingChk = (_rankingConfig as RankingConfiguration)?.Checksum ?? "n/a";
+        var profilerResult = await _pipeline.ExecuteWithProfilingAsync(context, cancellationToken);
+        var finalContext = profilerResult.Context;
 
-        var searchId = Guid.NewGuid();
-        var startedAt = DateTime.UtcNow;
+        var items = finalContext.ResearchEvidenceItemsList.Select(item =>
+        {
+            var reasons = new List<string>(item.Explanation?.Boosts ?? new List<string>());
+            if (analysis.IsReferenceLookup && analysis.ParsedReference != null)
+            {
+                bool isAlias = !query.OriginalQuery.Trim().Equals(analysis.ParsedReference.LookupKey, StringComparison.OrdinalIgnoreCase) &&
+                               !query.OriginalQuery.Trim().Equals($"{analysis.ParsedReference.Source} {analysis.ParsedReference.LookupKey}", StringComparison.OrdinalIgnoreCase) &&
+                               !query.OriginalQuery.Trim().Contains(":");
+                reasons.Add(isAlias ? "Alias reference match" : "Exact reference match");
+            }
+            return new EvidenceItem(
+                Source: item.Source,
+                Collection: item.Collection,
+                Reference: item.Reference,
+                PrimaryText: item.PrimaryText,
+                Translations: item.Translations,
+                Metadata: new EvidenceMetadata(item.Collection, "Edition", "Translator", "en", "1.0", "chk"),
+                Score: item.Confidence.RankingScore,
+                Reasons: reasons,
+                Highlights: new List<string>(),
+                Related: new List<RelatedEvidence>()
+            );
+        }).ToList();
+
+        var primaryItems = new List<EvidenceItem>();
+        var supportingItems = new List<EvidenceItem>();
+
+        foreach (var item in items)
+        {
+            if (analysis.IsReferenceLookup || item.Score >= 80)
+            {
+                primaryItems.Add(item);
+            }
+            else
+            {
+                supportingItems.Add(item);
+            }
+        }
+
+        var collectionsList = new List<EvidenceCollection>();
+        if (primaryItems.Count > 0)
+        {
+            collectionsList.Add(new EvidenceCollection("Primary Evidence", primaryItems));
+        }
+        if (supportingItems.Count > 0)
+        {
+            collectionsList.Add(new EvidenceCollection("Supporting Evidence", supportingItems));
+        }
 
         var execContext = new SearchExecutionContext(
-            SearchId: searchId,
-            StartedAt: startedAt,
+            SearchId: Guid.NewGuid(),
+            StartedAt: DateTime.UtcNow,
             OriginalQuery: query.OriginalQuery,
-            NormalizedQuery: context.NormalizedQuery,
-            Language: context.UniqueTokensList.Count > 0 ? "en" : "ar",
-            Strategy: context.ResolvedReference != null ? "ReferenceMatch" : "LexicalSearch",
-            RankingChecksum: rankingChk,
-            SynonymChecksum: synonymChk,
-            AliasChecksum: aliasChk,
-            StopwordChecksum: tokenizerChk
+            NormalizedQuery: analysis.Query.Normalized,
+            Language: "en",
+            Strategy: analysis.IsReferenceLookup ? "ReferenceMatch" : "LexicalSearch",
+            RankingChecksum: "default",
+            SynonymChecksum: "default",
+            AliasChecksum: "default",
+            StopwordChecksum: "default"
         );
 
-        var diagnostics = context.DiagnosticsValue with 
-        { 
-            ExecutionTimeMs = totalSw.Elapsed.TotalMilliseconds 
-        };
-
-        // Segment matches into EvidenceCollection groupings
-        var collections = new List<EvidenceCollection>();
-        var primaryItems = context.EvidenceItemsList.Where(e => e.Score >= 50).ToList();
-        var supportingItems = context.EvidenceItemsList.Where(e => e.Score < 50).ToList();
-
-        if (context.ResolvedReference != null)
-        {
-            collections.Add(new EvidenceCollection("Primary Evidence", context.EvidenceItemsList.ToList()));
-        }
-        else
-        {
-            if (primaryItems.Count > 0)
-            {
-                collections.Add(new EvidenceCollection("Primary Evidence", primaryItems));
-            }
-            if (supportingItems.Count > 0)
-            {
-                collections.Add(new EvidenceCollection("Supporting Evidence", supportingItems));
-            }
-        }
-
-        string strategy = context.ResolvedReference != null ? "Reference" : "Keyword";
-
-        var export = new ExportMetadata(
-            GeneratedAt: startedAt,
-            SearchId: searchId,
+        var exportMeta = new ExportMetadata(
+            GeneratedAt: DateTime.UtcNow,
+            SearchId: execContext.SearchId,
             ApplicationVersion: "1.0",
-            DatasetVersions: "Quran-v1,Hadith-v1",
-            ExecutionTimeMs: totalSw.Elapsed.TotalMilliseconds,
+            DatasetVersions: "1.0",
+            ExecutionTimeMs: finalContext.DiagnosticsValue.ExecutionTimeMs,
             SourcesUsed: new List<string> { "Quran", "Hadith" },
-            Language: execContext.Language
+            Language: "en"
         );
-
-        var relatedRefs = context.EvidenceItemsList
-            .Select(e => e.Reference)
-            .Take(5)
-            .ToList();
-
-        var relatedTopics = context.UniqueTokensList
-            .Concat(context.ExpandedTokensList)
-            .Distinct()
-            .Take(5)
-            .ToList();
 
         return new EvidenceDossier(
             ExecutionContext: execContext,
-            Summary: $"Search strategy: {strategy}. Total matches: {diagnostics.TotalMatches}.",
-            Collections: collections,
-            RelatedReferences: relatedRefs,
-            RelatedTopics: relatedTopics,
-            ExportMetadata: export
+            Summary: $"Retrieved {items.Count} matches in {finalContext.DiagnosticsValue.ExecutionTimeMs:F2}ms.",
+            Collections: collectionsList,
+            RelatedReferences: new List<string>(),
+            RelatedTopics: new List<string>(),
+            ExportMetadata: exportMeta
         );
     }
 
-    public async Task<EvidenceItem?> GetReferenceAsync(string reference, CancellationToken cancellationToken)
+    public async Task<ResearchDossier> ResearchAsync(SearchRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(reference))
-            return null;
+        if (request == null) throw new ArgumentNullException(nameof(request));
 
-        if (_resolver.TryResolve(reference, out var resolved) && resolved != null)
-        {
-            if (resolved.Identifier.Source == EvidenceSource.Quran && resolved.Identifier.Book != null)
-            {
-                int surah = int.Parse(resolved.Identifier.Book);
-                int ayah = int.Parse(resolved.Identifier.VerseOrHadithNumber ?? "1");
-
-                var v = await _dbContext.QuranVerses
-                    .AsNoTracking()
-                    .Include(v => v.Surah)
-                    .Include(v => v.Translations)
-                    .FirstOrDefaultAsync(v => v.SurahNumber == surah && v.AyahNumber == ayah, cancellationToken);
-
-                if (v != null)
-                {
-                    var match = new EvidenceMatch
-                    {
-                        Source = EvidenceSource.Quran,
-                        Collection = "Quran",
-                        Reference = $"{v.SurahNumber}:{v.AyahNumber}",
-                        PrimaryText = v.ArabicCleaned,
-                        Translations = v.Translations
-                            .Select(t => new TranslationDto { Language = t.Language, Translator = t.Translator, Text = t.Text })
-                            .ToList(),
-                        Metadata = new EvidenceMetadata(
-                            Dataset: "Quran-JSON",
-                            Edition: "Sahih International",
-                            Translator: "Sahih International",
-                            Language: "en",
-                            Version: "3.1.2",
-                            Checksum: "default_checksum"
-                        ),
-                        Score = 100
-                    };
-                    match.Reasons.Add("Exact reference lookup");
-
-                    return _evidenceBuilder.BuildItem(match);
-                }
-            }
-            else if (resolved.Identifier.Source == EvidenceSource.Hadith)
-            {
-                string coll = resolved.Identifier.Collection;
-                int hadithNum = int.Parse(resolved.Identifier.VerseOrHadithNumber ?? "1");
-
-                var h = await _dbContext.Hadiths
-                    .AsNoTracking()
-                    .Include(h => h.Collection)
-                    .Include(h => h.Book)
-                    .FirstOrDefaultAsync(h => h.Collection.ShortName.Contains(coll) && h.HadithNumber == hadithNum, cancellationToken);
-
-                if (h != null)
-                {
-                    var match = new EvidenceMatch
-                    {
-                        Source = EvidenceSource.Hadith,
-                        Collection = h.Collection.DisplayName,
-                        Reference = $"{h.Book.BookNumber}:{h.HadithNumber}",
-                        PrimaryText = h.ArabicCleaned,
-                        Translations = new List<TranslationDto>
-                        {
-                            new() { Language = "en", Translator = "Muhsin Khan", Text = $"{h.EnglishNarrator} {h.EnglishText}" }
-                        },
-                        Metadata = new EvidenceMetadata(
-                            Dataset: h.Collection.DisplayName,
-                            Edition: "Darussalam",
-                            Translator: "Muhsin Khan",
-                            Language: "en",
-                            Version: "2025.01",
-                            Checksum: "default_checksum"
-                        ),
-                        Score = 100
-                    };
-                    match.Reasons.Add("Exact reference lookup");
-
-                    return _evidenceBuilder.BuildItem(match);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    public Task<List<SearchSuggestionDto>> GetSuggestionsAsync(string prefix, CancellationToken cancellationToken)
-    {
-        return Task.FromResult(_suggestionIndex.Search(prefix));
-    }
-
-    public async Task<ResearchDossier> ResearchAsync(SearchQuery query, CancellationToken cancellationToken)
-    {
         var totalSw = Stopwatch.StartNew();
-        var context = new SearchContext(query, query.Options);
 
-        // Execute Search Pipeline with automated memory/time execution steps profiling
+        // 1. Execute Query Analyzer
+        var analysis = await _queryAnalyzer.AnalyzeAsync(request);
+
+        // 2. Execute Search Pipeline with automatic timing profiling
+        var context = new SearchContext(request, analysis);
         var profilerResult = await _pipeline.ExecuteWithProfilingAsync(context, cancellationToken);
         var finalContext = profilerResult.Context;
+        
         totalSw.Stop();
 
-        // Resolve and map candidates to ResearchEvidenceItem with dynamically fetched cross-references
+        // 3. Classify evidence items into target dossier sections
         var primaryList = new List<ResearchEvidenceItem>();
         var supportingList = new List<ResearchEvidenceItem>();
         var backgroundList = new List<ResearchEvidenceItem>();
         var contrastingList = new List<ResearchEvidenceItem>();
         var commentaryList = new List<ResearchEvidenceItem>();
 
-        var page = query.Options.Page;
-        var pageSize = query.Options.PageSize;
-
-        var paginatedCandidates = finalContext.RankedCandidatesList
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
-
-        foreach (var candidate in paginatedCandidates)
+        foreach (var item in finalContext.ResearchEvidenceItemsList)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // Fetch dynamic cross-references using the ICrossReferenceEngine provider chain
-            var crossRefs = await _crossReferenceEngine.ResolveReferencesAsync(candidate.Source, candidate.Reference, cancellationToken);
-
-            // Construct final ResearchEvidenceItem wrapping confidence and structured explanations
-            var item = _evidenceBuilder.BuildResearchItem(candidate, crossRefs);
-
-            // Classify item into target dossier section based on relevance score thresholds
-            if (finalContext.ResolvedReference != null)
+            if (finalContext.Analysis.IsReferenceLookup)
             {
                 primaryList.Add(item);
             }
@@ -299,9 +189,9 @@ public class ResearchService : IResearchService
             { EvidenceSection.Commentary, commentaryList }
         };
 
-        // Query provenance from active dataset metadata
-        var datasetIds = finalContext.RankedCandidatesList.Select(c => c.DatasetId).Distinct().ToList();
+        // 4. Resolve provenance metadata from database
         var provenanceList = new List<ResearchProvenance>();
+        var datasetIds = finalContext.RankedCandidatesList.Select(c => c.Document.DatasetId).Distinct().ToList();
 
         foreach (var dId in datasetIds)
         {
@@ -322,7 +212,6 @@ public class ResearchService : IResearchService
             }
             else
             {
-                // Fallback for mock/test runs without DB seed
                 provenanceList.Add(new ResearchProvenance(
                     DatasetId: searchId,
                     ImportSessionId: "default-session",
@@ -333,34 +222,76 @@ public class ResearchService : IResearchService
             }
         }
 
-        string tokenizerChk = (_tokenizer as Tokenizer)?.Checksum ?? "n/a";
-        string synonymChk = (_synonymEngine as SynonymEngine)?.Checksum ?? "n/a";
         var searchGuid = Guid.NewGuid();
-
         var exportMeta = new ExportMetadata(
             GeneratedAt: DateTime.UtcNow,
             SearchId: searchGuid,
             ApplicationVersion: "1.0",
             DatasetVersions: string.Join(",", provenanceList.Select(p => p.Version)),
             ExecutionTimeMs: totalSw.Elapsed.TotalMilliseconds,
-            SourcesUsed: finalContext.RankedCandidatesList.Select(c => c.Source.ToString()).Distinct().ToList(),
-            Language: "en"
+            SourcesUsed: finalContext.RankedCandidatesList.Select(c => c.Document.Source.ToString()).Distinct().ToList(),
+            Language: request.Language.ToString()
         );
 
         var finalDiagnostics = finalContext.DiagnosticsValue with 
         { 
             ExecutionTimeMs = totalSw.Elapsed.TotalMilliseconds,
-            ReturnedMatches = paginatedCandidates.Count
+            ReturnedMatches = finalContext.ResearchEvidenceItemsList.Count
         };
 
         return new ResearchDossier(
-            Query: query.OriginalQuery,
-            Summary: $"Retrieved {finalDiagnostics.TotalMatches} matches in {finalDiagnostics.ExecutionTimeMs:F2}ms using dynamically generated cross-references.",
+            Query: request.Query,
+            Summary: $"Retrieved {finalDiagnostics.TotalMatches} matches in {finalDiagnostics.ExecutionTimeMs:F2}ms using capability-based dynamic retrieval.",
             EvidenceSections: sections,
             PipelineTimeline: profilerResult.Timeline,
             Diagnostics: finalDiagnostics,
             ProvenanceList: provenanceList,
             ExportMetadata: exportMeta
         );
+    }
+
+    public async Task<EvidenceItem?> GetReferenceAsync(string reference, CancellationToken cancellationToken)
+    {
+        // Helper resolving single reference lookup
+        var sources = new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith };
+        var request = new SearchRequest(
+            Query: reference,
+            Language: ResearchLanguage.Auto,
+            Sources: sources,
+            Pagination: new Pagination(1, 1),
+            IncludeCrossReferences: false,
+            IncludeExplanations: false,
+            SemanticSearchEnabled: false
+        );
+
+        var analysis = await _queryAnalyzer.AnalyzeAsync(request);
+        if (analysis.ParsedReference != null)
+        {
+            var context = new SearchContext(request, analysis);
+            var result = await _pipeline.ExecuteAsync(context, cancellationToken);
+            if (result.ResearchEvidenceItemsList.Count > 0)
+            {
+                var item = result.ResearchEvidenceItemsList[0];
+                return new EvidenceItem(
+                    Source: item.Source,
+                    Collection: item.Collection,
+                    Reference: item.Reference,
+                    PrimaryText: item.PrimaryText,
+                    Translations: item.Translations,
+                    Metadata: new EvidenceMetadata(item.Collection, "Edition", "Translator", "en", "1.0", "chk"),
+                    Score: item.Confidence.RankingScore,
+                    Reasons: item.Explanation.Boosts,
+                    Highlights: new List<string>(),
+                    Related: new List<RelatedEvidence>()
+                );
+            }
+        }
+
+        return null;
+    }
+
+    public Task<List<SearchSuggestionDto>> GetSuggestionsAsync(string prefix, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(_suggestionIndex.Search(prefix));
     }
 }

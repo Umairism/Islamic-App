@@ -19,34 +19,26 @@ public class QuranCitationStrategy : ICitationStrategy
 
     public EvidenceSource Source => EvidenceSource.Quran;
 
-    public string Format(KnowledgeIdentifier identifier, EvidenceMetadata metadata)
+    public string Format(ResearchReference reference, string language)
     {
-        if (identifier == null) return string.Empty;
+        if (reference == null) return string.Empty;
+        if (reference is not QuranReference qref) return reference.ToDisplayString();
 
-        string lang = identifier.Language.Trim().ToLowerInvariant();
+        string lang = language?.Trim().ToLowerInvariant() ?? "en";
 
         if (lang.StartsWith("ar"))
         {
-            string name = identifier.Collection;
-            if (int.TryParse(identifier.Book, out int num) && _arabicSurahNames.TryGetValue(num, out var sName))
-            {
-                name = sName;
-            }
-            return $"سورة {name} آية {identifier.VerseOrHadithNumber}";
+            string name = _arabicSurahNames.TryGetValue(qref.Surah, out var sName) ? sName : qref.Surah.ToString();
+            return $"سورة {name} آية {qref.Ayah}";
         }
         else if (lang.StartsWith("ur"))
         {
-            string name = identifier.Collection;
-            if (int.TryParse(identifier.Book, out int num) && _arabicSurahNames.TryGetValue(num, out var sName))
-            {
-                name = sName;
-            }
-            return $"سورۃ {name} آیت {identifier.VerseOrHadithNumber}";
+            string name = _arabicSurahNames.TryGetValue(qref.Surah, out var sName) ? sName : qref.Surah.ToString();
+            return $"سورۃ {name} آیت {qref.Ayah}";
         }
         else
         {
-            // English / default format
-            return $"Qur'an {identifier.Book}:{identifier.VerseOrHadithNumber}";
+            return $"Qur'an {qref.Surah}:{qref.Ayah}";
         }
     }
 }

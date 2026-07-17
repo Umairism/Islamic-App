@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
-using IslamicApp.Application.Research.Catalog;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
 
@@ -8,24 +8,24 @@ namespace IslamicApp.Infrastructure.Search.Citation;
 
 public class CitationFormatter : ICitationFormatter
 {
-    private readonly KnowledgeCatalog _catalog;
+    private readonly IEnumerable<ICitationStrategy> _strategies;
 
-    public CitationFormatter(KnowledgeCatalog catalog)
+    public CitationFormatter(IEnumerable<ICitationStrategy> strategies)
     {
-        _catalog = catalog;
+        _strategies = strategies;
     }
 
-    public string Format(KnowledgeIdentifier identifier, EvidenceMetadata metadata)
+    public string Format(ResearchReference reference, string language)
     {
-        if (identifier == null) return string.Empty;
+        if (reference == null) return string.Empty;
 
-        var strategy = _catalog.CitationStrategies.FirstOrDefault(s => s.Source == identifier.Source);
+        var strategy = _strategies.FirstOrDefault(s => s.Source == reference.Source);
         if (strategy != null)
         {
-            return strategy.Format(identifier, metadata);
+            return strategy.Format(reference, language);
         }
 
         // Fallback default citation
-        return $"{identifier.Source} {identifier.Collection} {identifier.Book}:{identifier.VerseOrHadithNumber}";
+        return reference.ToDisplayString();
     }
 }

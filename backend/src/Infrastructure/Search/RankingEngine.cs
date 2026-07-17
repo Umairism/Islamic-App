@@ -9,11 +9,11 @@ namespace IslamicApp.Infrastructure.Search;
 
 public class RankingEngine : IRankingEngine
 {
-    private readonly IRankingConfiguration _config;
+    private readonly IRankingWeightsProvider _weightsProvider;
 
-    public RankingEngine(IRankingConfiguration config)
+    public RankingEngine(IRankingWeightsProvider weightsProvider)
     {
-        _config = config;
+        _weightsProvider = weightsProvider;
     }
 
     public SearchContext Rank(SearchContext context)
@@ -21,182 +21,129 @@ public class RankingEngine : IRankingEngine
         if (context == null || context.CandidatesList.Count == 0)
             return context ?? null!;
 
-        var rankedList = new List<EvidenceMatch>();
+        var rankedList = new List<KnowledgeMatch>();
 
         foreach (var candidate in context.CandidatesList)
         {
-            double maxScore = 0;
-            var reasons = new List<string>();
-            var matchedTerms = new List<string>();
-            
-            double textMatchScore = 0;
-            double refMatchScore = 0;
-            
-            var boosts = new List<string>();
-            var penalties = new List<string>();
-            var strategies = new List<string>();
+            var contributions = new List<RankingContribution>();
+            double finalScore = 0;
 
-            // 1. Reference Match Check
-            if (context.ResolvedReference != null && 
-                IsReferenceMatch(candidate.Source, candidate.Reference, context.ResolvedReference.Identifier))
+            // 1. Exact Reference Match Check
+            if (context.Analysis.ParsedReference != null && 
+                IsReferenceMatch(candidate.Document.Source, candidate.Document.Reference, context.Analysis.ParsedReference))
             {
-                bool isAlias = context.UniqueTokensList.Any(t => 
-                    string.Equals(t, "ayat", StringComparison.OrdinalIgnoreCase) || 
-                    string.Equals(t, "kursi", StringComparison.OrdinalIgnoreCase));
-                
-                double refScore = isAlias ? _config.Alias : _config.Reference;
-                refMatchScore = isAlias ? 95 : 100;
-                
-                if (refScore > maxScore)
+                bool isAlias = !context.Analysis.OriginalRequest.Query.Trim().Equals(context.Analysis.ParsedReference.LookupKey, StringComparison.OrdinalIgnoreCase) &&
+                               !context.Analysis.OriginalRequest.Query.Trim().Equals($"{context.Analysis.ParsedReference.Source} {context.Analysis.ParsedReference.LookupKey}", StringComparison.OrdinalIgnoreCase) &&
+                               !context.Analysis.OriginalRequest.Query.Trim().Contains(":");
+
+                double weight = _weightsProvider.GetWeight(isAlias ? "Alias" : "Reference");
+                double contribVal = weight * 1.0;
+                contributions.Add(new RankingContribution(
+                    Factor: RankingFactor.ExactReference,
+                    Weight: weight,
+                    Value: 1.0,
+                    Contribution: contribVal
+                ));
+                finalScore = Math.Max(finalScore, contribVal);
+            }
+
+            string cleanArabic = candidate.Document.PrimaryText ?? string.Empty;
+
+            // 2. Exact Arabic Match Check
+            if (!string.IsNullOrWhiteSpace(context.Analysis.Query.Normalized) && 
+                cleanArabic.Contains(context.Analysis.Query.Normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                double weight = _weightsProvider.GetWeight("Arabic");
+                double contribVal = weight * 1.0;
+                contributions.Add(new RankingContribution(
+                    Factor: RankingFactor.ExactWord,
+                    Weight: weight,
+                    Value: 1.0,
+                    Contribution: contribVal
+                ));
+                finalScore = Math.Max(finalScore, contribVal);
+            }
+
+            // 3. Exact Translation Match Check
+            foreach (var translation in candidate.Document.Translations)
+            {
+                if (!string.IsNullOrWhiteSpace(context.Analysis.Query.Normalized) && 
+                    translation.Text.Contains(context.Analysis.Query.Normalized, StringComparison.OrdinalIgnoreCase))
                 {
-                    maxScore = refScore;
-                    reasons.Add(isAlias ? "Alias reference match" : "Exact reference match");
-                    strategies.Add(isAlias ? "AliasMatch" : "ExactReferenceMatch");
+                    double weight = _weightsProvider.GetWeight("Translation");
+                    double contribVal = weight * 1.0;
+                    contributions.Add(new RankingContribution(
+                        Factor: RankingFactor.TranslationPriority,
+                        Weight: weight,
+                        Value: 1.0,
+                        Contribution: contribVal
+                    ));
+                    finalScore = Math.Max(finalScore, contribVal);
                 }
             }
 
-            // Clean Arabic text
-            string cleanArabic = candidate.PrimaryText ?? string.Empty;
-
-            // 2. Exact Arabic Match
-            if (!string.IsNullOrWhiteSpace(context.NormalizedQuery) && 
-                cleanArabic.Contains(context.NormalizedQuery, StringComparison.OrdinalIgnoreCase))
+            // 4. Token & Synonym level matches
+            foreach (var token in context.Analysis.Query.Tokens)
             {
-                textMatchScore = 100;
-                if (_config.Arabic > maxScore)
-                {
-                    maxScore = _config.Arabic;
-                    reasons.Add("Exact Arabic phrase match");
-                    strategies.Add("ExactArabicMatch");
-                }
-                matchedTerms.Add(context.NormalizedQuery);
-            }
-
-            // 3. Exact Translation Match
-            foreach (var translation in candidate.Translations)
-            {
-                if (!string.IsNullOrWhiteSpace(context.NormalizedQuery) && 
-                    translation.Text.Contains(context.NormalizedQuery, StringComparison.OrdinalIgnoreCase))
-                {
-                    textMatchScore = 100;
-                    if (_config.Translation > maxScore)
-                    {
-                        maxScore = _config.Translation;
-                        reasons.Add($"Exact translation match in {translation.Language}");
-                        strategies.Add("ExactTranslationMatch");
-                    }
-                    matchedTerms.Add(context.NormalizedQuery);
-                }
-            }
-
-            // 4. Token level match & synonyms
-            foreach (var token in context.UniqueTokensList)
-            {
-                // Arabic token match
                 if (cleanArabic.Contains(token, StringComparison.OrdinalIgnoreCase))
                 {
-                    textMatchScore = Math.Max(textMatchScore, 40);
-                    double score = _config.Partial;
-                    if (score > maxScore)
-                    {
-                        maxScore = score;
-                        reasons.Add($"Partial Arabic match for term: {token}");
-                        strategies.Add("PartialArabicMatch");
-                    }
-                    matchedTerms.Add(token);
-                }
-
-                // Translation token match
-                foreach (var trans in candidate.Translations)
-                {
-                    if (trans.Text.Contains(token, StringComparison.OrdinalIgnoreCase))
-                    {
-                        textMatchScore = Math.Max(textMatchScore, 40);
-                        double score = _config.Partial;
-                        if (score > maxScore)
-                        {
-                            maxScore = score;
-                            reasons.Add($"Partial translation match for term: {token}");
-                            strategies.Add("PartialTranslationMatch");
-                        }
-                        matchedTerms.Add(token);
-                    }
+                    double weight = _weightsProvider.GetWeight("Partial");
+                    double contribVal = weight * 1.0;
+                    contributions.Add(new RankingContribution(
+                        Factor: RankingFactor.Prefix,
+                        Weight: weight,
+                        Value: 1.0,
+                        Contribution: contribVal
+                    ));
+                    finalScore = Math.Max(finalScore, contribVal);
                 }
             }
 
-            // 5. Synonym matches
-            foreach (var expandedToken in context.ExpandedTokensList)
+            // 5. Synonym expansion matches
+            foreach (var synToken in context.Analysis.Query.Synonyms)
             {
-                if (context.UniqueTokensList.Contains(expandedToken, StringComparer.OrdinalIgnoreCase))
-                    continue;
-
-                foreach (var trans in candidate.Translations)
+                foreach (var trans in candidate.Document.Translations)
                 {
-                    if (trans.Text.Contains(expandedToken, StringComparison.OrdinalIgnoreCase))
+                    if (trans.Text.Contains(synToken, StringComparison.OrdinalIgnoreCase))
                     {
-                        textMatchScore = Math.Max(textMatchScore, 30);
-                        double score = _config.Synonym;
-                        if (score > maxScore)
-                        {
-                            maxScore = score;
-                            reasons.Add($"Synonym match for expanded term: {expandedToken}");
-                            strategies.Add("SynonymMatch");
-                        }
-                        matchedTerms.Add(expandedToken);
+                        double weight = _weightsProvider.GetWeight("Synonym");
+                        double contribVal = weight * 0.8;
+                        contributions.Add(new RankingContribution(
+                            Factor: RankingFactor.Synonym,
+                            Weight: weight,
+                            Value: 0.8,
+                            Contribution: contribVal
+                        ));
+                        finalScore = Math.Max(finalScore, contribVal);
                     }
                 }
             }
 
-            // 6. Metadata matching factors (e.g. source priority)
-            if (candidate.Source == EvidenceSource.Quran)
+            // 6. Source Priorities (Primary boost)
+            if (candidate.Document.Source == EvidenceSource.Quran)
             {
-                // Assign a subtle boost for primary source
-                maxScore = Math.Min(100.0, maxScore + 2.0);
-                boosts.Add("Quran Divine Revelation Source Priority (+2.0)");
+                double weight = 2.0; // Priority weight
+                contributions.Add(new RankingContribution(
+                    Factor: RankingFactor.CollectionPriority,
+                    Weight: weight,
+                    Value: 1.0,
+                    Contribution: weight * 1.0
+                ));
+                finalScore = Math.Min(100.0, finalScore + (weight * 1.0));
             }
 
-            candidate.Score = maxScore;
-            candidate.Reasons.AddRange(reasons.Distinct());
-            candidate.MatchedTerms.AddRange(matchedTerms.Distinct());
-
-            // Build Structured Explanation
-            candidate.Explanation = new SearchExplanation(
-                TokenMatches: matchedTerms.Distinct().ToList(),
-                ReferenceMatches: context.ResolvedReference != null ? new List<string> { context.ResolvedReference.FormattedReference } : new List<string>(),
-                Boosts: boosts,
-                Penalties: penalties,
-                RankingFactors: new Dictionary<string, double>
-                {
-                    { "TextMatchWeight", textMatchScore },
-                    { "ReferenceMatchWeight", refMatchScore },
-                    { "BaseScore", maxScore }
-                }
+            var rankingScore = new RankingScore(
+                FinalValue: finalScore,
+                Contributions: contributions
             );
 
-            // Compute Structured EvidenceConfidence
-            string authority = candidate.Source == EvidenceSource.Quran ? "Primary (Divine Revelation)" : "Secondary (Authentic Narration)";
-            
-            double overallConfidence = 0;
-            if (refMatchScore == 100) overallConfidence = candidate.Source == EvidenceSource.Quran ? 98.0 : 92.0;
-            else if (refMatchScore == 95) overallConfidence = candidate.Source == EvidenceSource.Quran ? 95.0 : 88.0;
-            else if (textMatchScore == 100) overallConfidence = candidate.Source == EvidenceSource.Quran ? 88.0 : 82.0;
-            else overallConfidence = Math.Clamp(maxScore * 0.9, 0, 100);
-
-            candidate.Confidence = new EvidenceConfidence(
-                SourceAuthority: authority,
-                TextMatch: textMatchScore,
-                ReferenceMatch: refMatchScore,
-                RankingScore: maxScore,
-                OverallConfidence: overallConfidence
-            );
-
-            rankedList.Add(candidate);
+            var scoredMatch = candidate with { Ranking = rankingScore };
+            rankedList.Add(scoredMatch);
         }
 
-        // Sort by score descending, then by reference ascending
+        // Sort by final score descending
         var sorted = rankedList
-            .OrderByDescending(c => c.Score)
-            .ThenBy(c => c.Reference)
+            .OrderByDescending(c => c.Ranking.FinalValue)
             .ToList();
 
         return context with
@@ -205,33 +152,19 @@ public class RankingEngine : IRankingEngine
         };
     }
 
-    private static bool IsReferenceMatch(EvidenceSource source, string candidateRef, KnowledgeIdentifier target)
+    private static bool IsReferenceMatch(EvidenceSource source, ResearchReference candidateRef, ResearchReference targetRef)
     {
-        if (source != target.Source) return false;
+        if (source != targetRef.Source) return false;
 
-        if (string.Equals(candidateRef, target.VerseOrHadithNumber, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        // Resolve range references (e.g. target "285-286" matches candidate "285" or "286")
-        if (target.VerseOrHadithNumber != null && target.VerseOrHadithNumber.Contains("-"))
+        if (candidateRef is QuranReference qcand && targetRef is QuranReference qtarg)
         {
-            var parts = target.VerseOrHadithNumber.Split('-');
-            if (parts.Length == 2 && int.TryParse(parts[0], out int start) && int.TryParse(parts[1], out int end))
-            {
-                var candParts = candidateRef.Split(':');
-                string candAyahStr = candParts.Length == 2 ? candParts[1] : candidateRef;
-                if (int.TryParse(candAyahStr, out int candVal))
-                {
-                    return candVal >= start && candVal <= end;
-                }
-            }
+            return qcand.Surah == qtarg.Surah && qcand.Ayah == qtarg.Ayah;
         }
 
-        // Support exact Qur'an reference format matching (e.g., candidate "2:255" matches target book="2" verse="255")
-        if (source == EvidenceSource.Quran && target.Book != null)
+        if (candidateRef is HadithReference hcand && targetRef is HadithReference htarg)
         {
-            string expected = $"{target.Book}:{target.VerseOrHadithNumber}";
-            return string.Equals(candidateRef, expected, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(hcand.Collection, htarg.Collection, StringComparison.OrdinalIgnoreCase) && 
+                   hcand.HadithNumber == htarg.HadithNumber;
         }
 
         return false;
