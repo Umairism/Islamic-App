@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Retrieval.Lexical;
+
+using IslamicApp.Application.Retrieval.Hybrid;
 
 namespace IslamicApp.Infrastructure.Search;
 
@@ -24,6 +27,13 @@ public class QuranSearcher : ISourceSearcher
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var defaultEvidence = new RetrievalEvidence(
+            Method: RetrievalMethod.Lexical,
+            Similarity: 0.0f,
+            Semantic: new SemanticEvidence(0.0f, new List<string>(), new List<string>(), new List<string>()),
+            Explanation: "Lexical search retrieval"
+        );
+
         // 1. Reference Lookup Routing Path
         if (context.Analysis.IsReferenceLookup && context.Analysis.ParsedReference is QuranReference qref)
         {
@@ -31,7 +41,7 @@ public class QuranSearcher : ISourceSearcher
             if (doc != null)
             {
                 var scoreObj = new RankingScore(0.0, new List<RankingContribution>());
-                return new List<KnowledgeMatch> { new(doc, new List<string>(), scoreObj) };
+                return new List<KnowledgeMatch> { new(doc, new List<string>(), scoreObj, defaultEvidence) };
             }
             return Array.Empty<KnowledgeMatch>();
         }
@@ -50,7 +60,8 @@ public class QuranSearcher : ISourceSearcher
         return docs.Select(doc => new KnowledgeMatch(
             Document: doc,
             MatchedTokens: context.Analysis.Query.Tokens,
-            Ranking: new RankingScore(0.0, new List<RankingContribution>())
+            Ranking: new RankingScore(0.0, new List<RankingContribution>()),
+            Evidence: defaultEvidence
         )).ToList();
     }
 }

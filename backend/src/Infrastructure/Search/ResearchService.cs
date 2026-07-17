@@ -9,6 +9,12 @@ using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Retrieval.Diagnostics;
+using IslamicApp.Application.Retrieval.Hybrid;
+using IslamicApp.Application.Retrieval.Policies;
+using IslamicApp.Application.Retrieval.Semantic;
+using IslamicApp.Application.Semantic.Query;
+using IslamicApp.Application.Semantic.Reasoning;
 using IslamicApp.Infrastructure.Persistence;
 
 namespace IslamicApp.Infrastructure.Search;
@@ -19,17 +25,29 @@ public class ResearchService : IResearchService
     private readonly ISearchPipeline _pipeline;
     private readonly ApplicationDbContext _dbContext;
     private readonly SuggestionIndex _suggestionIndex;
+    private readonly IQueryRewriter _queryRewriter;
+    private readonly IRetrievalOrchestrator _retrievalOrchestrator;
+    private readonly ISemanticConfiguration _semanticConfig;
+    private readonly IKnowledgeReasoner _reasoner;
 
     public ResearchService(
         IQueryAnalyzer queryAnalyzer,
         ISearchPipeline pipeline,
         ApplicationDbContext dbContext,
-        SuggestionIndex suggestionIndex)
+        SuggestionIndex suggestionIndex,
+        IQueryRewriter queryRewriter,
+        IRetrievalOrchestrator retrievalOrchestrator,
+        ISemanticConfiguration semanticConfig,
+        IKnowledgeReasoner reasoner)
     {
         _queryAnalyzer = queryAnalyzer;
         _pipeline = pipeline;
         _dbContext = dbContext;
         _suggestionIndex = suggestionIndex;
+        _queryRewriter = queryRewriter;
+        _retrievalOrchestrator = retrievalOrchestrator;
+        _semanticConfig = semanticConfig;
+        _reasoner = reasoner;
     }
 
     public async Task<EvidenceDossier> SearchAsync(SearchQuery query, CancellationToken cancellationToken)
@@ -41,12 +59,15 @@ public class ResearchService : IResearchService
             Language: ResearchLanguage.Auto,
             Sources: sources,
             Pagination: pagination,
-            IncludeCrossReferences: false,
-            IncludeExplanations: false,
-            SemanticSearchEnabled: false
+            IncludeCrossReferences: true,
+            IncludeExplanations: true,
+            SemanticSearchEnabled: _semanticConfig.Features.EnableEmbeddings
         );
 
         var analysis = await _queryAnalyzer.AnalyzeAsync(request);
+        var rewritten = await _queryRewriter.RewriteAsync(query.OriginalQuery, cancellationToken);
+        analysis = analysis with { SemanticQuery = rewritten };
+
         var context = new SearchContext(request, analysis);
 
         var profilerResult = await _pipeline.ExecuteWithProfilingAsync(context, cancellationToken);
@@ -107,7 +128,7 @@ public class ResearchService : IResearchService
             OriginalQuery: query.OriginalQuery,
             NormalizedQuery: analysis.Query.Normalized,
             Language: "en",
-            Strategy: analysis.IsReferenceLookup ? "ReferenceMatch" : "LexicalSearch",
+            Strategy: analysis.IsReferenceLookup ? "ReferenceMatch" : "HybridSearch",
             RankingChecksum: "default",
             SynonymChecksum: "default",
             AliasChecksum: "default",
@@ -124,14 +145,18 @@ public class ResearchService : IResearchService
             Language: "en"
         );
 
-        return new EvidenceDossier(
+        var dossier = new EvidenceDossier(
             ExecutionContext: execContext,
-            Summary: $"Retrieved {items.Count} matches in {finalContext.DiagnosticsValue.ExecutionTimeMs:F2}ms.",
+            Summary: "",
             Collections: collectionsList,
             RelatedReferences: new List<string>(),
             RelatedTopics: new List<string>(),
-            ExportMetadata: exportMeta
+            ExportMetadata: exportMeta,
+            Traces: finalContext.TracesList.ToList()
         );
+
+        var summaryResult = await _reasoner.GenerateSummaryAsync(dossier, cancellationToken);
+        return dossier with { Summary = summaryResult.Content };
     }
 
     public async Task<ResearchDossier> ResearchAsync(SearchRequest request, CancellationToken cancellationToken)
@@ -140,8 +165,10 @@ public class ResearchService : IResearchService
 
         var totalSw = Stopwatch.StartNew();
 
-        // 1. Execute Query Analyzer
+        // 1. Execute Query Analyzer and Ontology rewriter
         var analysis = await _queryAnalyzer.AnalyzeAsync(request);
+        var rewritten = await _queryRewriter.RewriteAsync(request.Query, cancellationToken);
+        analysis = analysis with { SemanticQuery = rewritten };
 
         // 2. Execute Search Pipeline with automatic timing profiling
         var context = new SearchContext(request, analysis);

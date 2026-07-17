@@ -1,0 +1,10 @@
+{
+  "id": "belief.tawhid",
+  "displayName": "Tawhid",
+  "aliases": ["monotheism", "oneness", "unity"],
+  "roots": ["وحد"],
+  "related": ["belief.tawhid.rububiyyah", "belief.tawhid.uluhiyyah", "belief.tawhid.asma"],
+  "broader": ["belief.iman"],
+  "narrower": ["belief.tawhid.rububiyyah"],
+  "seeAlso": ["belief.shirk"]
+}

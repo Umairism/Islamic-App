@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using IslamicApp.Application.Retrieval.Semantic;
+using IslamicApp.Application.Retrieval.Policies;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
 
@@ -14,9 +16,23 @@ public class SearchConfigurationProvider :
     ISynonymProvider, 
     IAliasProvider, 
     IStopWordProvider, 
-    IRankingWeightsProvider
+    IRankingWeightsProvider,
+    ISemanticConfiguration
 {
     private readonly SearchConfiguration _config;
+
+    public SemanticFeatures Features => new(
+        EnableEmbeddings: true,
+        EnableHybrid: true,
+        EnableCrossReferences: true,
+        EnableReasoning: true,
+        EnableBenchmarking: true
+    );
+
+    public string EmbeddingProvider => "mock";
+    public string SimilarityMetric => "cosine";
+    public string FusionStrategy => "rrf";
+    public SemanticPolicy DefaultPolicy => SemanticPolicy.Adaptive;
 
     public SearchConfigurationProvider()
     {

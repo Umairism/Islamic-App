@@ -18,8 +18,22 @@ using IslamicApp.Application.Research.Catalog;
 using IslamicApp.Infrastructure.Search.Citation;
 using IslamicApp.Infrastructure.Search.CrossReference;
 using IslamicApp.Infrastructure.Search.Export;
-using IslamicApp.Infrastructure.Search.Retrieval;
 using IslamicApp.Infrastructure.Search.Plugins;
+using IslamicApp.Application.Semantic.Query;
+using IslamicApp.Application.Semantic.Reasoning;
+using IslamicApp.Application.Retrieval.Semantic;
+using IslamicApp.Application.Retrieval.Hybrid;
+using IslamicApp.Application.Retrieval.Benchmark;
+using IslamicApp.Application.Retrieval.Lexical;
+using IslamicApp.Infrastructure.Retrieval.Lexical;
+using IslamicApp.Infrastructure.Semantic.Query;
+using IslamicApp.Infrastructure.Semantic.Embeddings;
+using IslamicApp.Infrastructure.Semantic.Vector;
+using IslamicApp.Infrastructure.Semantic.Cache;
+using IslamicApp.Infrastructure.Semantic.Reasoning;
+using IslamicApp.Infrastructure.Retrieval.Semantic;
+using IslamicApp.Infrastructure.Retrieval.Hybrid;
+using IslamicApp.Infrastructure.Retrieval.Benchmark;
 
 namespace IslamicApp.WebApi;
 
@@ -97,7 +111,26 @@ public class Program
 
         builder.Services.AddScoped<IQueryAnalyzer, QueryAnalyzer>();
         builder.Services.AddScoped<ILexicalRetriever, LexicalRetriever>();
+        
+        // Milestone 6B registrations
+        builder.Services.AddSingleton<ISemanticConfiguration, SearchConfigurationProvider>();
+        builder.Services.AddSingleton<ISimilarityMetric, CosineSimilarity>();
+        builder.Services.AddSingleton<IEmbeddingGenerator, MockEmbeddingGenerator>();
+        builder.Services.AddSingleton<IEmbeddingCache, EmbeddingCache>();
+        builder.Services.AddSingleton<IVectorStore, InMemoryVectorStore>();
+        builder.Services.AddSingleton<IFusionStrategy, ReciprocalRankFusion>();
+        builder.Services.AddScoped<IQueryRewriter, QueryRewriter>();
+        builder.Services.AddScoped<ISemanticRetriever, SemanticRetriever>();
         builder.Services.AddScoped<IRetrievalOrchestrator, RetrievalOrchestrator>();
+        builder.Services.AddScoped<IKnowledgeReasoner, NotImplementedReasoner>();
+        builder.Services.AddScoped<ISemanticBenchmarkRunner, SemanticBenchmarkRunner>();
+
+        // Embedding Pipeline Stages
+        builder.Services.AddScoped<IEmbeddingPipelineStage, NormalizationStage>();
+        builder.Services.AddScoped<IEmbeddingPipelineStage, LanguageDetectionStage>();
+        builder.Services.AddScoped<IEmbeddingPipelineStage, EmbeddingGenerationStage>();
+        builder.Services.AddScoped<IEmbeddingPipeline, EmbeddingPipeline>();
+
         builder.Services.AddScoped<IRankingEngine, RankingEngine>();
         builder.Services.AddScoped<IEvidenceBuilder, EvidenceBuilder>();
         builder.Services.AddScoped<ISearchPipeline, SearchPipeline>();

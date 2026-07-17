@@ -4,6 +4,7 @@ using System.Linq;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Retrieval.Hybrid;
 
 namespace IslamicApp.Infrastructure.Search;
 
@@ -18,19 +19,38 @@ public class RankingEngine : IRankingEngine
 
     public SearchContext Rank(SearchContext context)
     {
-        if (context == null || context.CandidatesList.Count == 0)
+        if (context == null || (context.CandidatesList.Count == 0 && context.RetrievedCandidatesList.Count == 0))
             return context ?? null!;
 
         var rankedList = new List<KnowledgeMatch>();
 
-        foreach (var candidate in context.CandidatesList)
+        var candidatesToScrutinize = new List<(KnowledgeDocument Document, float RetrievalScore, RetrievalMethod Method)>();
+
+        if (context.RetrievedCandidatesList.Count > 0)
         {
+            foreach (var cand in context.RetrievedCandidatesList)
+            {
+                candidatesToScrutinize.Add((cand.Document, cand.Score, cand.Method));
+            }
+        }
+        else
+        {
+            foreach (var cand in context.CandidatesList)
+            {
+                var doc = cand.Document;
+                candidatesToScrutinize.Add((doc, (float)cand.Ranking.FinalValue, RetrievalMethod.Lexical));
+            }
+        }
+
+        foreach (var item in candidatesToScrutinize)
+        {
+            var document = item.Document;
             var contributions = new List<RankingContribution>();
             double finalScore = 0;
 
             // 1. Exact Reference Match Check
             if (context.Analysis.ParsedReference != null && 
-                IsReferenceMatch(candidate.Document.Source, candidate.Document.Reference, context.Analysis.ParsedReference))
+                IsReferenceMatch(document.Source, document.Reference, context.Analysis.ParsedReference))
             {
                 bool isAlias = !context.Analysis.OriginalRequest.Query.Trim().Equals(context.Analysis.ParsedReference.LookupKey, StringComparison.OrdinalIgnoreCase) &&
                                !context.Analysis.OriginalRequest.Query.Trim().Equals($"{context.Analysis.ParsedReference.Source} {context.Analysis.ParsedReference.LookupKey}", StringComparison.OrdinalIgnoreCase) &&
@@ -47,7 +67,7 @@ public class RankingEngine : IRankingEngine
                 finalScore = Math.Max(finalScore, contribVal);
             }
 
-            string cleanArabic = candidate.Document.PrimaryText ?? string.Empty;
+            string cleanArabic = document.PrimaryText ?? string.Empty;
 
             // 2. Exact Arabic Match Check
             if (!string.IsNullOrWhiteSpace(context.Analysis.Query.Normalized) && 
@@ -65,7 +85,7 @@ public class RankingEngine : IRankingEngine
             }
 
             // 3. Exact Translation Match Check
-            foreach (var translation in candidate.Document.Translations)
+            foreach (var translation in document.Translations)
             {
                 if (!string.IsNullOrWhiteSpace(context.Analysis.Query.Normalized) && 
                     translation.Text.Contains(context.Analysis.Query.Normalized, StringComparison.OrdinalIgnoreCase))
@@ -102,7 +122,7 @@ public class RankingEngine : IRankingEngine
             // 5. Synonym expansion matches
             foreach (var synToken in context.Analysis.Query.Synonyms)
             {
-                foreach (var trans in candidate.Document.Translations)
+                foreach (var trans in document.Translations)
                 {
                     if (trans.Text.Contains(synToken, StringComparison.OrdinalIgnoreCase))
                     {
@@ -119,8 +139,24 @@ public class RankingEngine : IRankingEngine
                 }
             }
 
-            // 6. Source Priorities (Primary boost)
-            if (candidate.Document.Source == EvidenceSource.Quran)
+            // 6. Semantic Similarity Match Check
+            if (item.Method == RetrievalMethod.Semantic || item.Method == RetrievalMethod.Hybrid)
+            {
+                double weight = _weightsProvider.GetWeight("Semantic");
+                if (weight == 0) weight = 35.0; // Default fallback weight
+
+                double contribVal = weight * item.RetrievalScore;
+                contributions.Add(new RankingContribution(
+                    Factor: RankingFactor.SemanticSimilarity,
+                    Weight: weight,
+                    Value: item.RetrievalScore,
+                    Contribution: contribVal
+                ));
+                finalScore = Math.Max(finalScore, contribVal);
+            }
+
+            // 7. Source Priorities (Primary boost)
+            if (document.Source == EvidenceSource.Quran)
             {
                 double weight = 2.0; // Priority weight
                 contributions.Add(new RankingContribution(
@@ -137,7 +173,32 @@ public class RankingEngine : IRankingEngine
                 Contributions: contributions
             );
 
-            var scoredMatch = candidate with { Ranking = rankingScore };
+            // Construct explainable RetrievalEvidence
+            var matchedConcepts = context.Analysis.SemanticQuery?.Concepts ?? new List<string>();
+            var matchedRoots = context.Analysis.SemanticQuery?.ArabicRoots ?? new List<string>();
+            var expandedTerms = context.Analysis.SemanticQuery?.ExpandedTokens ?? new List<string>();
+
+            var semanticEvidence = new SemanticEvidence(
+                SemanticSimilarity: item.Method == RetrievalMethod.Lexical ? 0.0 : item.RetrievalScore,
+                MatchedConcepts: matchedConcepts,
+                MatchedRoots: matchedRoots,
+                ExpandedTerms: expandedTerms
+            );
+
+            var evidence = new RetrievalEvidence(
+                Method: item.Method,
+                Similarity: item.RetrievalScore,
+                Semantic: semanticEvidence,
+                Explanation: $"Retrieved via {item.Method} search. Similarity: {item.RetrievalScore:F3}"
+            );
+
+            var scoredMatch = new KnowledgeMatch(
+                Document: document,
+                MatchedTokens: context.Analysis.Query.Tokens,
+                Ranking: rankingScore,
+                Evidence: evidence
+            );
+
             rankedList.Add(scoredMatch);
         }
 

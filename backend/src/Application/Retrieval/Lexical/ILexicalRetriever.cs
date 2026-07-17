@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Models;
 
-namespace IslamicApp.Application.Research.Interfaces;
+namespace IslamicApp.Application.Retrieval.Lexical;
 
 public record LexicalSearchParameters(
     NormalizedQuery Query,

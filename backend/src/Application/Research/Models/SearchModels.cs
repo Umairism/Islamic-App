@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
+using IslamicApp.Application.Retrieval.Diagnostics;
 
 namespace IslamicApp.Application.Research.Models;
 
@@ -77,13 +78,16 @@ public record EvidenceCollection(
     List<EvidenceItem> Items
 );
 
+
+
 public record EvidenceDossier(
     SearchExecutionContext ExecutionContext,
     string Summary,
     List<EvidenceCollection> Collections,
     List<string> RelatedReferences,
     List<string> RelatedTopics,
-    ExportMetadata ExportMetadata
+    ExportMetadata ExportMetadata,
+    List<PipelineEvent>? Traces = null
 );
 
 public record SearchSuggestionDto(

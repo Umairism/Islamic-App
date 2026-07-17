@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using IslamicApp.Application.Research.Enums;
+using IslamicApp.Application.Semantic.Query;
 
 namespace IslamicApp.Application.Research.Models;
 
@@ -25,7 +26,8 @@ public record QueryAnalysis(
     ResearchLanguage DetectedLanguage,
     QueryIntent Intent,
     ResearchReference? ParsedReference,
-    IReadOnlyList<string> ExtractedTopics
+    IReadOnlyList<string> ExtractedTopics,
+    SemanticQuery? SemanticQuery = null
 )
 {
     public bool IsReferenceLookup => Intent.Mode == SearchMode.ReferenceLookup && ParsedReference != null;

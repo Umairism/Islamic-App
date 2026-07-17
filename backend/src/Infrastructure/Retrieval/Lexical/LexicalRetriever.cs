@@ -6,11 +6,11 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
-using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Retrieval.Lexical;
 using IslamicApp.Infrastructure.Persistence;
 
-namespace IslamicApp.Infrastructure.Search.Retrieval;
+namespace IslamicApp.Infrastructure.Retrieval.Lexical;
 
 public class LexicalRetriever : ILexicalRetriever
 {
@@ -31,7 +31,6 @@ public class LexicalRetriever : ILexicalRetriever
         if (tokens == null || tokens.Count == 0)
             return docs;
 
-        // 1. Fetch Quran Verses Matching Tokens (if Quran is a target source)
         if (parameters.TargetSources.Contains(EvidenceSource.Quran))
         {
             var verseQuery = _dbContext.QuranVerses
@@ -39,7 +38,6 @@ public class LexicalRetriever : ILexicalRetriever
                 .Include(v => v.Translations)
                 .AsQueryable();
 
-            // Match at least one token in Arabic or English translation
             var matchedVerses = new List<Persistence.Entities.QuranVerseEntity>();
             foreach (var token in tokens)
             {
@@ -67,7 +65,6 @@ public class LexicalRetriever : ILexicalRetriever
             }
         }
 
-        // 2. Fetch Hadiths Matching Tokens (if Hadith is a target source)
         if (parameters.TargetSources.Contains(EvidenceSource.Hadith))
         {
             var hadithQuery = _dbContext.Hadiths

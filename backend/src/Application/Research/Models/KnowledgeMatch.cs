@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
+using IslamicApp.Application.Retrieval.Hybrid;
 
 namespace IslamicApp.Application.Research.Models;
 
@@ -30,5 +31,6 @@ public record KnowledgeDocument(
 public record KnowledgeMatch(
     KnowledgeDocument Document,
     IReadOnlyList<string> MatchedTokens,
-    RankingScore Ranking
+    RankingScore Ranking,
+    RetrievalEvidence Evidence
 );

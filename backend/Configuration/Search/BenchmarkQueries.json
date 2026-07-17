@@ -1,0 +1,34 @@
+[
+  {
+    "query": "parents",
+    "expectedReferences": ["2:83", "17:23", "31:14", "46:15"]
+  },
+  {
+    "query": "zakat",
+    "expectedReferences": ["2:43", "2:83", "2:110", "9:60"]
+  },
+  {
+    "query": "riba",
+    "expectedReferences": ["2:275", "2:276", "2:278", "3:130"]
+  },
+  {
+    "query": "fasting",
+    "expectedReferences": ["2:183", "2:184", "2:185", "2:187"]
+  },
+  {
+    "query": "marriage",
+    "expectedReferences": ["4:3", "4:24", "4:25", "30:21"]
+  },
+  {
+    "query": "prayer",
+    "expectedReferences": ["2:43", "2:110", "2:153", "2:238"]
+  },
+  {
+    "query": "inheritance",
+    "expectedReferences": ["4:11", "4:12", "4:176"]
+  },
+  {
+    "query": "patience",
+    "expectedReferences": ["2:153", "2:155", "3:200", "103:3"]
+  }
+]

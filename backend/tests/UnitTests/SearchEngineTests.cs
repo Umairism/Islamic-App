@@ -15,7 +15,8 @@ using IslamicApp.Infrastructure.Search.Export;
 using IslamicApp.Application.DTOs;
 using Microsoft.EntityFrameworkCore;
 using IslamicApp.Infrastructure.Persistence;
-using IslamicApp.Infrastructure.Search.Retrieval;
+using IslamicApp.Infrastructure.Retrieval.Hybrid;
+using IslamicApp.Application.Retrieval.Hybrid;
 using IslamicApp.Infrastructure.Search.Plugins;
 
 namespace IslamicApp.UnitTests;
@@ -144,7 +145,17 @@ public class SearchEngineTests
             ImportSessionId: "default"
         );
 
-        var candidate = new KnowledgeMatch(doc, new List<string> { "parents" }, new RankingScore(0, new List<RankingContribution>()));
+        var candidate = new KnowledgeMatch(
+            Document: doc,
+            MatchedTokens: new List<string> { "parents" },
+            Ranking: new RankingScore(0, new List<RankingContribution>()),
+            Evidence: new RetrievalEvidence(
+                Method: RetrievalMethod.Lexical,
+                Similarity: 0.0f,
+                Semantic: new SemanticEvidence(0.0f, new List<string>(), new List<string>(), new List<string>()),
+                Explanation: "Lexical search retrieval"
+            )
+        );
 
         var context = new SearchContext(request, analysis)
         {

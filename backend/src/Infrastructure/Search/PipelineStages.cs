@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Retrieval.Diagnostics;
+using IslamicApp.Application.Retrieval.Policies;
+using IslamicApp.Application.Retrieval.Hybrid;
 
 namespace IslamicApp.Infrastructure.Search;
 
@@ -22,19 +26,29 @@ public class DatabaseQueryStage : ISearchPipelineStage
     {
         var sw = Stopwatch.StartNew();
         
-        var matches = await _orchestrator.RetrieveMatchesAsync(context.Analysis, cancellationToken);
+        var policy = context.Request.SemanticSearchEnabled ? SemanticPolicy.Adaptive : SemanticPolicy.LexicalOnly;
+        
+        var retrievalCtx = new RetrievalContext(
+            Query: context.Analysis,
+            Policy: policy,
+            CancellationToken: cancellationToken,
+            Events: ImmutableList<PipelineEvent>.Empty
+        );
+
+        var (candidates, updatedCtx) = await _orchestrator.RetrieveCandidatesAsync(retrievalCtx);
         
         sw.Stop();
 
         var updatedDiagnostics = context.DiagnosticsValue with 
         { 
             QueryTimeMs = sw.Elapsed.TotalMilliseconds,
-            TotalMatches = matches.Count
+            TotalMatches = candidates.Count
         };
 
         return context with
         {
-            Candidates = matches,
+            RetrievedCandidates = candidates,
+            Traces = updatedCtx.Events,
             Diagnostics = updatedDiagnostics
         };
     }

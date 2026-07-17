@@ -1,0 +1,10 @@
+{
+  "id": "family.parents",
+  "displayName": "Parents",
+  "aliases": ["walidayn", "mother", "father"],
+  "roots": ["ولد"],
+  "related": ["family.parents.rights", "family.parents.kindness", "family.parents.obedience"],
+  "broader": ["family.relationships"],
+  "narrower": ["family.mother", "family.father"],
+  "seeAlso": ["family.relatives"]
+}

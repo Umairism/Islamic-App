@@ -41,6 +41,11 @@ public class MarkdownExportFormatter : IExportFormatter
 
                 sb.AppendLine($"- **Confidence**: {item.Confidence.OverallConfidence}% (Authority: {item.Confidence.SourceAuthority})");
 
+                if (item.Explanation?.Boosts != null && item.Explanation.Boosts.Count > 0)
+                {
+                    sb.AppendLine($"- **Ranking Signals**: {string.Join(", ", item.Explanation.Boosts)}");
+                }
+
                 if (item.CrossReferences.Count > 0)
                 {
                     sb.AppendLine($"- **Cross-References**:");

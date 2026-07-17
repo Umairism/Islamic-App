@@ -1,0 +1,10 @@
+{
+  "id": "worship.prayer",
+  "displayName": "Prayer",
+  "aliases": ["salah", "namaz", "prayers"],
+  "roots": ["صلي"],
+  "related": ["worship.prayer.congregation", "worship.prayer.times"],
+  "broader": ["worship.pillars"],
+  "narrower": ["worship.prayer.fard"],
+  "seeAlso": ["worship.wudu"]
+}
