@@ -8,6 +8,9 @@ using IslamicApp.Application.DTOs;
 using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Research.Analysis;
+using IslamicApp.Application.Research.Memory;
+using IslamicApp.Application.Semantic.Query;
 
 namespace IslamicApp.WebApi.Controllers;
 
@@ -18,11 +21,25 @@ public class ResearchController : ControllerBase
 {
     private readonly IResearchService _researchService;
     private readonly IExportEngine _exportEngine;
+    private readonly IResearchPipeline _researchPipeline;
+    private readonly IQueryAnalyzer _queryAnalyzer;
+    private readonly IQueryRewriter _queryRewriter;
+    private readonly IKnowledgeMemoryStore _memoryStore;
 
-    public ResearchController(IResearchService researchService, IExportEngine exportEngine)
+    public ResearchController(
+        IResearchService researchService,
+        IExportEngine exportEngine,
+        IResearchPipeline researchPipeline,
+        IQueryAnalyzer queryAnalyzer,
+        IQueryRewriter queryRewriter,
+        IKnowledgeMemoryStore memoryStore)
     {
         _researchService = researchService;
         _exportEngine = exportEngine;
+        _researchPipeline = researchPipeline;
+        _queryAnalyzer = queryAnalyzer;
+        _queryRewriter = queryRewriter;
+        _memoryStore = memoryStore;
     }
 
     /// <summary>
@@ -193,8 +210,204 @@ public class ResearchController : ControllerBase
         var list = Enum.GetNames(typeof(EvidenceRelationshipType)).ToList();
         return Ok(new ApiResponse<List<string>>(list));
     }
+
+    /// <summary>
+    /// Executes end-to-end evidence retrieval, analysis, AI reasoning, structured validation, explainability pathing, and async document rendering.
+    /// </summary>
+    [HttpPost("synthesize")]
+    [ProducesResponseType(typeof(ApiResponse<ResearchResult>), 200)]
+    [ProducesResponseType(400)]
+    public async Task<IActionResult> Synthesize([FromBody] SynthesizeRequestDto request, CancellationToken cancellationToken)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Query))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Bad Request",
+                Detail = "Search query parameter cannot be empty."
+            });
+        }
+
+        var searchReq = new SearchRequest(
+            Query: request.Query,
+            Language: ResearchLanguage.Auto,
+            Sources: new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith },
+            Pagination: new Pagination(1, 20),
+            IncludeCrossReferences: true,
+            IncludeExplanations: true,
+            SemanticSearchEnabled: true
+        );
+
+        var queryAnalysis = await _queryAnalyzer.AnalyzeAsync(searchReq);
+        var rewritten = await _queryRewriter.RewriteAsync(request.Query, cancellationToken);
+        queryAnalysis = queryAnalysis with { SemanticQuery = rewritten };
+
+        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken);
+        if (!pipeResult.IsSuccess)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Pipeline Failed",
+                Detail = pipeResult.Error!.Message
+            });
+        }
+
+        var execCtx = pipeResult.Value!;
+        var response = new ResearchResult(
+            ExecutionContext: execCtx,
+            Session: execCtx.Session!,
+            Reasoning: execCtx.Reasoning!,
+            Validation: execCtx.Validation!,
+            Explainability: execCtx.Explainability!,
+            Outputs: execCtx.RenderedOutputs?.ToList() ?? new List<RenderResult>()
+        );
+
+        return Ok(new ApiResponse<ResearchResult>(response));
+    }
+
+    /// <summary>
+    /// Executes research scoped to a workspace.
+    /// </summary>
+    [HttpPost("/api/v1/workspaces/{id}/research")]
+    [ProducesResponseType(typeof(ApiResponse<ResearchResult>), 200)]
+    [ProducesResponseType(400)]
+    public async Task<IActionResult> WorkspaceResearch(
+        [FromRoute] Guid id,
+        [FromBody] SynthesizeRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Query))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Bad Request",
+                Detail = "Search query parameter cannot be empty."
+            });
+        }
+
+        var searchReq = new SearchRequest(
+            Query: request.Query,
+            Language: ResearchLanguage.Auto,
+            Sources: new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith },
+            Pagination: new Pagination(1, 20),
+            IncludeCrossReferences: true,
+            IncludeExplanations: true,
+            SemanticSearchEnabled: true
+        );
+
+        var queryAnalysis = await _queryAnalyzer.AnalyzeAsync(searchReq);
+        var rewritten = await _queryRewriter.RewriteAsync(request.Query, cancellationToken);
+        queryAnalysis = queryAnalysis with { SemanticQuery = rewritten };
+
+        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken);
+        if (!pipeResult.IsSuccess)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Pipeline Failed",
+                Detail = pipeResult.Error!.Message
+            });
+        }
+
+        var execCtx = pipeResult.Value!;
+        if (execCtx.Metadata != null)
+        {
+            execCtx = execCtx.WithMetadata(execCtx.Metadata with { WorkspaceId = id });
+        }
+
+        var response = new ResearchResult(
+            ExecutionContext: execCtx,
+            Session: execCtx.Session!,
+            Reasoning: execCtx.Reasoning!,
+            Validation: execCtx.Validation!,
+            Explainability: execCtx.Explainability!,
+            Outputs: execCtx.RenderedOutputs?.ToList() ?? new List<RenderResult>()
+        );
+
+        return Ok(new ApiResponse<ResearchResult>(response));
+    }
+
+    /// <summary>
+    /// Retrieves active memory entries for a workspace.
+    /// </summary>
+    [HttpGet("/api/v1/workspaces/{id}/memory")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<MemoryEntry>>), 200)]
+    public async Task<IActionResult> GetWorkspaceMemory([FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var memories = await _memoryStore.GetWorkspaceMemoriesAsync(id, cancellationToken);
+        return Ok(new ApiResponse<IReadOnlyList<MemoryEntry>>(memories));
+    }
+
+    /// <summary>
+    /// Appends a continuation query leveraging workspace memory context history.
+    /// </summary>
+    [HttpPost("/api/v1/workspaces/{id}/continue")]
+    [ProducesResponseType(typeof(ApiResponse<ResearchResult>), 200)]
+    [ProducesResponseType(400)]
+    public async Task<IActionResult> ContinueResearch(
+        [FromRoute] Guid id,
+        [FromBody] SynthesizeRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Query))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Bad Request",
+                Detail = "Search query parameter cannot be empty."
+            });
+        }
+
+        var searchReq = new SearchRequest(
+            Query: request.Query,
+            Language: ResearchLanguage.Auto,
+            Sources: new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith },
+            Pagination: new Pagination(1, 20),
+            IncludeCrossReferences: true,
+            IncludeExplanations: true,
+            SemanticSearchEnabled: true
+        );
+
+        var queryAnalysis = await _queryAnalyzer.AnalyzeAsync(searchReq);
+        var rewritten = await _queryRewriter.RewriteAsync(request.Query, cancellationToken);
+        queryAnalysis = queryAnalysis with { SemanticQuery = rewritten };
+
+        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken);
+        if (!pipeResult.IsSuccess)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Pipeline Failed",
+                Detail = pipeResult.Error!.Message
+            });
+        }
+
+        var execCtx = pipeResult.Value!;
+        if (execCtx.Metadata != null)
+        {
+            execCtx = execCtx.WithMetadata(execCtx.Metadata with { WorkspaceId = id });
+        }
+
+        var response = new ResearchResult(
+            ExecutionContext: execCtx,
+            Session: execCtx.Session!,
+            Reasoning: execCtx.Reasoning!,
+            Validation: execCtx.Validation!,
+            Explainability: execCtx.Explainability!,
+            Outputs: execCtx.RenderedOutputs?.ToList() ?? new List<RenderResult>()
+        );
+
+        return Ok(new ApiResponse<ResearchResult>(response));
+    }
 }
 
+public record SynthesizeRequestDto(string Query);
 public record GraphNodeDto(string Id, string Label, string Type);
 public record GraphEdgeDto(string Source, string Target, string Type, string Description);
 public record GraphResponseDto(List<GraphNodeDto> Nodes, List<GraphEdgeDto> Edges);

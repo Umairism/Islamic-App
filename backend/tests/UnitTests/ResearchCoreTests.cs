@@ -14,6 +14,7 @@ using IslamicApp.Infrastructure.Research.Analysis;
 using IslamicApp.Infrastructure.Research.Analysis.ConflictRules;
 using IslamicApp.Infrastructure.Research.Analysis.Methodologies;
 using IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors;
+using IslamicApp.Infrastructure.Research;
 using Microsoft.Extensions.Logging;
 
 namespace IslamicApp.UnitTests;
@@ -230,7 +231,11 @@ public class ResearchCoreTests
             new LoggingBehavior(new MockLogger<LoggingBehavior>()),
             new RetrievalBehavior(mockRepo),
             new DeduplicationBehavior(deduplicator),
-            new AnalysisBehavior(analysisBuilder)
+            new AnalysisBehavior(analysisBuilder),
+            new ReasoningBehavior(new MockReasoner()),
+            new ValidationBehavior(new MockResearchValidator(), new MockTelemetry()),
+            new ExplainabilityBehavior(new MockExplainabilityBuilder()),
+            new RenderingBehavior(new List<IResearchRenderer> { new MarkdownRenderer(), new HtmlRenderer() })
         };
 
         var pipeline = new ResearchPipeline(behaviors);
@@ -300,4 +305,66 @@ public class MockLogger<T> : ILogger<T>
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
     public bool IsEnabled(LogLevel logLevel) => false;
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) { }
+}
+
+public class MockReasoner : IReasoner
+{
+    public Task<Result<ResearchResult>> ReasonAsync(ResearchContext context, CancellationToken cancellationToken)
+    {
+        var metadata = new GenerationMetadata("MockProvider", "MockModel", 100, 100, TimeSpan.FromMilliseconds(100), false, FinishReason.Stop);
+        var session = new ReasoningSession(
+            SessionId: Guid.NewGuid(),
+            Prompt: new ResearchPrompt(new PromptTemplate("t", "v", "p", new Dictionary<string, string>()), new PromptVariables("", ResearchMethodologyType.Thematic, new List<EvidenceSnippet>(), new List<ReferenceId>()), "", ""),
+            Response: new GenerationResponse("{}", metadata),
+            Metadata: metadata,
+            StartedAt: DateTimeOffset.UtcNow,
+            CompletedAt: DateTimeOffset.UtcNow
+        );
+
+        var reasoning = new ReasoningResult("Summary text", new List<ResearchClaim>(), new List<ResearchFinding>(), new List<ResearchLimitation>(), ResearchMethodologyType.Thematic, "1.0.0", "{}", metadata);
+        var validation = new ValidationReport(
+            ClaimValidation: new ClaimValidationReport(new List<ValidationIssue>()),
+            CitationValidation: new CitationValidationReport(new List<ValidationIssue>()),
+            ConsistencyValidation: new ConsistencyValidationReport(new List<ValidationIssue>())
+        );
+
+        var result = new ResearchResult(
+            ExecutionContext: null!,
+            Session: session,
+            Reasoning: reasoning,
+            Validation: validation,
+            Explainability: new ExplainabilityMap(new List<SourceTraceLink>()),
+            Outputs: new List<RenderResult>()
+        );
+
+        return Task.FromResult(Result<ResearchResult>.Success(result));
+    }
+}
+
+public class MockResearchValidator : IResearchValidator
+{
+    public ValidationReport ValidateAll(ReasoningResult reasoning, ResearchContext context)
+    {
+        return new ValidationReport(
+            ClaimValidation: new ClaimValidationReport(new List<ValidationIssue>()),
+            CitationValidation: new CitationValidationReport(new List<ValidationIssue>()),
+            ConsistencyValidation: new ConsistencyValidationReport(new List<ValidationIssue>())
+        );
+    }
+}
+
+public class MockExplainabilityBuilder : IExplainabilityBuilder
+{
+    public ExplainabilityMap BuildMap(ReasoningResult reasoning, ResearchContext context)
+    {
+        return new ExplainabilityMap(new List<SourceTraceLink>());
+    }
+}
+
+public class MockTelemetry : IReasoningTelemetry
+{
+    public void TrackUsage(GenerationMetadata metadata) {}
+    public void TrackRetry(string provider, int attempt, Exception ex) {}
+    public void TrackCircuitBreak(string provider, TimeSpan duration) {}
+    public void TrackValidationFailure(ValidationReport report) {}
 }

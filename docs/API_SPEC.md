@@ -356,3 +356,48 @@ Retrieve audit logs detailing past ETL pipeline executions. Supports pagination.
   }
 }
 ```
+
+---
+
+### 9. Workspace Research
+Execute evidence-first analysis and reasoning scoped to a workspace.
+
+* **URL**: `/api/v1/workspaces/{id}/research`
+* **Method**: `POST`
+* **Auth Required**: No
+* **Path Parameters**:
+  * `id` (string, required): The target workspace ID.
+* **Body**:
+```json
+{
+  "query": "rights of neighbors in Islam"
+}
+```
+
+---
+
+### 10. Get Workspace Memory
+Retrieve active time-decayed memories from prior research loops in this workspace.
+
+* **URL**: `/api/v1/workspaces/{id}/memory`
+* **Method**: `GET`
+* **Auth Required**: No
+* **Path Parameters**:
+  * `id` (string, required): The target workspace ID.
+
+---
+
+### 11. Continue Research
+Execute follow-up questions leveraging prior time-decayed workspace memories.
+
+* **URL**: `/api/v1/workspaces/{id}/continue`
+* **Method**: `POST`
+* **Auth Required**: No
+* **Path Parameters**:
+  * `id` (string, required): The target workspace ID.
+* **Body**:
+```json
+{
+  "query": "compare this with Hadith narratives"
+}
+```

@@ -29,7 +29,10 @@ public class AnalysisBehavior : IResearchPipelineBehavior
                 return Result<ResearchExecutionContext>.Failure(new Error("MissingCorpus", "Corpus is missing during analysis stage.", ErrorSeverity.Error));
             }
 
+            var startedAt = DateTimeOffset.UtcNow;
             var analysis = _analysisBuilder.Build(executionContext.Context.Input.Query, corpus);
+            var finishedAt = DateTimeOffset.UtcNow;
+
             var updatedContext = executionContext.Context.WithAnalysis(analysis);
 
             var graphEvent = new GraphBuiltEvent(
@@ -51,12 +54,20 @@ public class AnalysisBehavior : IResearchPipelineBehavior
                 MethodologyType: analysis.Methodology.Type
             );
 
+            var stageExecution = new PipelineStageExecution(
+                Stage: PipelineStage.Analysis,
+                StartedAt: startedAt,
+                FinishedAt: finishedAt,
+                Duration: finishedAt - startedAt
+            );
+
             var updatedExecContext = executionContext
                 .WithContext(updatedContext)
                 .Raise(graphEvent)
                 .Raise(conflictEvent)
                 .Raise(methodologyEvent)
-                .TransitionTo(PipelineStage.Completed);
+                .WithStageExecution(stageExecution)
+                .TransitionTo(PipelineStage.Reasoning);
 
             return await next(updatedExecContext);
         }

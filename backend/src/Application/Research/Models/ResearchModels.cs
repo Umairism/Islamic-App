@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using IslamicApp.Application.Research.Enums;
+using IslamicApp.Application.Research.Memory;
 
 namespace IslamicApp.Application.Research.Models;
 
@@ -97,7 +98,8 @@ public record ResearchAnalysis(
 
 public record ResearchContext(
     ResearchInput Input,
-    ResearchAnalysis? Analysis = null
+    ResearchAnalysis? Analysis = null,
+    MemorySelectionResult? Memory = null
 )
 {
     public ResearchContext WithCorpus(EvidenceCorpus corpus) =>

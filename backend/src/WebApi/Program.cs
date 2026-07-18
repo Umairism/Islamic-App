@@ -159,13 +159,95 @@ public class Program
         builder.Services.AddScoped<IConflictRule, MadhhabDifferenceRule>();
         builder.Services.AddScoped<IConflictRule, ContextDifferenceRule>();
 
-        // Pluggable Pipeline Behaviors
+        // Milestone 7B Core Reasoning & Synthesis Services
+        builder.Services.AddScoped<IPromptService, IslamicApp.Infrastructure.AI.PromptService>();
+        builder.Services.AddScoped<IReasoningParser, IslamicApp.Infrastructure.AI.ReasoningParser>();
+        builder.Services.AddScoped<IReasoningTelemetry, IslamicApp.Infrastructure.AI.ReasoningTelemetry>();
+        builder.Services.AddScoped<IResearchValidator, IslamicApp.Infrastructure.Research.ResearchValidator>();
+        builder.Services.AddScoped<IExplainabilityBuilder, IslamicApp.Infrastructure.Research.ExplainabilityBuilder>();
+        builder.Services.AddScoped<IOutputGuard, IslamicApp.Infrastructure.Research.OutputGuard>();
+        builder.Services.AddScoped<IReasoner, IslamicApp.Infrastructure.Research.Reasoner>();
+
+        // Pluggable Validation Rules
+        builder.Services.AddScoped<IValidationRule, IslamicApp.Infrastructure.Research.ValidationRules.ClaimValidationRule>();
+        builder.Services.AddScoped<IValidationRule, IslamicApp.Infrastructure.Research.ValidationRules.CitationValidationRule>();
+        builder.Services.AddScoped<IValidationRule, IslamicApp.Infrastructure.Research.ValidationRules.ConsistencyValidationRule>();
+
+        // Pluggable Presentation Renderers
+        builder.Services.AddScoped<IResearchRenderer, IslamicApp.Infrastructure.Research.MarkdownRenderer>();
+        builder.Services.AddScoped<IResearchRenderer, IslamicApp.Infrastructure.Research.HtmlRenderer>();
+        builder.Services.AddScoped<IResearchRenderer, IslamicApp.Infrastructure.Research.JsonRenderer>();
+        builder.Services.AddScoped<IResearchRenderer, IslamicApp.Infrastructure.Research.PdfRenderer>();
+
+        // AI Provider Decorator Chain
+        builder.Services.AddScoped<ITextGenerationProvider>(sp => new IslamicApp.Infrastructure.AI.ResilientGenerationProviderDecorator(
+            new IslamicApp.Infrastructure.AI.Providers.MockProvider(),
+            sp.GetRequiredService<IReasoningTelemetry>()));
+        builder.Services.AddScoped<ITextGenerationProvider>(sp => new IslamicApp.Infrastructure.AI.ResilientGenerationProviderDecorator(
+            new IslamicApp.Infrastructure.AI.Providers.OpenAIProvider(),
+            sp.GetRequiredService<IReasoningTelemetry>()));
+        builder.Services.AddScoped<ITextGenerationProvider>(sp => new IslamicApp.Infrastructure.AI.ResilientGenerationProviderDecorator(
+            new IslamicApp.Infrastructure.AI.Providers.GeminiProvider(),
+            sp.GetRequiredService<IReasoningTelemetry>()));
+        builder.Services.AddScoped<ITextGenerationProvider>(sp => new IslamicApp.Infrastructure.AI.ResilientGenerationProviderDecorator(
+            new IslamicApp.Infrastructure.AI.Providers.AzureOpenAIProvider(),
+            sp.GetRequiredService<IReasoningTelemetry>()));
+
+        // Pluggable Pipeline Behaviors (Milestone 7A + 7B)
         builder.Services.AddScoped<IResearchPipelineBehavior, ExceptionBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, MetricsBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, LoggingBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.WorkspaceMemoryBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, RetrievalBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, DeduplicationBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, AnalysisBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.ReasoningBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.ValidationBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.IterationBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.ExplainabilityBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.RenderingBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.PersistenceBehavior>();
+
+        // Milestone 8 DI Registrations
+        builder.Services.AddSingleton<IResearchFeatureFlags, IslamicApp.Infrastructure.Research.ResearchFeatureFlags>();
+        builder.Services.AddScoped<IOutboxService, IslamicApp.Infrastructure.Persistence.Outbox.OutboxService>();
+        builder.Services.AddScoped<ISearchIndex, IslamicApp.Infrastructure.Persistence.Search.PostgresSearchIndex>();
+        
+        builder.Services.AddSingleton<IslamicApp.Infrastructure.Research.BackgroundJobScheduler>();
+        builder.Services.AddSingleton<IBackgroundJobScheduler>(sp => sp.GetRequiredService<IslamicApp.Infrastructure.Research.BackgroundJobScheduler>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<IslamicApp.Infrastructure.Research.BackgroundJobScheduler>());
+        builder.Services.AddHostedService<IslamicApp.Infrastructure.Persistence.Outbox.OutboxDispatcher>();
+
+        builder.Services.AddScoped<IslamicApp.Infrastructure.Research.WorkspaceExportService>();
+        builder.Services.AddScoped<IExportWriter, IslamicApp.Infrastructure.Research.Export.MarkdownWorkspaceWriter>();
+        builder.Services.AddScoped<IExportWriter, IslamicApp.Infrastructure.Research.Export.HtmlWorkspaceWriter>();
+        builder.Services.AddScoped<IExportWriter, IslamicApp.Infrastructure.Research.Export.PdfWorkspaceWriter>();
+        builder.Services.AddScoped<IExportWriter, IslamicApp.Infrastructure.Research.Export.JsonWorkspaceWriter>();
+        builder.Services.AddScoped<IExportWriter, IslamicApp.Infrastructure.Research.Export.DocxWorkspaceWriter>();
+
+        // Milestone 9 DI Registrations
+        builder.Services.Configure<IslamicApp.Application.Research.Memory.MemoryRankingOptions>(options =>
+        {
+            options.SemanticWeight = 0.45;
+            options.CitationWeight = 0.25;
+            options.MethodologyWeight = 0.15;
+            options.RecencyWeight = 0.15;
+        });
+        builder.Services.AddSingleton<IslamicApp.Application.Research.Memory.IConfidenceCalculator, IslamicApp.Infrastructure.Research.Memory.ConfidenceCalculator>();
+        builder.Services.AddSingleton<IslamicApp.Application.Research.Memory.IMemoryDecayStrategy, IslamicApp.Infrastructure.Research.Memory.WorkspaceSpecificDecayStrategy>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IIterationPlanner, IslamicApp.Infrastructure.Research.Memory.IterationPlanner>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IKnowledgeMemoryStore, IslamicApp.Infrastructure.Research.Memory.MemoryStore>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IMemoryRetriever, IslamicApp.Infrastructure.Research.Memory.MemoryRetriever>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IMemoryRanker, IslamicApp.Infrastructure.Research.Memory.MemoryRanker>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IMemoryCompressor, IslamicApp.Infrastructure.Research.Memory.MemoryCompressor>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IMemoryContextBuilder, IslamicApp.Infrastructure.Research.Memory.MemoryContextBuilder>();
+
+        builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(
+            typeof(Program).Assembly,
+            typeof(IslamicApp.Infrastructure.Persistence.EventHandlers.SaveSessionSnapshotHandler).Assembly,
+            typeof(IslamicApp.Infrastructure.Persistence.EventHandlers.MemoryEventHandlers).Assembly,
+            typeof(IslamicApp.Application.Research.Events.ResearchStartedEvent).Assembly
+        ));
 
         // Embedding Pipeline Stages
         builder.Services.AddScoped<IEmbeddingPipelineStage, NormalizationStage>();
