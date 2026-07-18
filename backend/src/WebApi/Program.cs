@@ -26,6 +26,12 @@ using IslamicApp.Application.Retrieval.Hybrid;
 using IslamicApp.Application.Retrieval.Benchmark;
 using IslamicApp.Application.Retrieval.Lexical;
 using IslamicApp.Infrastructure.Retrieval.Lexical;
+using IslamicApp.Application.Research.Analysis;
+using IslamicApp.Application.Research.Events;
+using IslamicApp.Infrastructure.Research.Analysis;
+using IslamicApp.Infrastructure.Research.Analysis.Methodologies;
+using IslamicApp.Infrastructure.Research.Analysis.ConflictRules;
+using IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors;
 using IslamicApp.Infrastructure.Semantic.Query;
 using IslamicApp.Infrastructure.Semantic.Embeddings;
 using IslamicApp.Infrastructure.Semantic.Vector;
@@ -124,6 +130,42 @@ public class Program
         builder.Services.AddScoped<IRetrievalOrchestrator, RetrievalOrchestrator>();
         builder.Services.AddScoped<IKnowledgeReasoner, NotImplementedReasoner>();
         builder.Services.AddScoped<ISemanticBenchmarkRunner, SemanticBenchmarkRunner>();
+
+        // Milestone 7A Research Core Registrations
+        builder.Services.AddScoped<IEvidenceRepository, EvidenceRepository>();
+        builder.Services.AddScoped<IEvidenceDeduplicator, EvidenceDeduplicator>();
+        builder.Services.AddScoped<IEvidenceAnalyzer, EvidenceAnalyzer>();
+        builder.Services.AddScoped<IGraphBuilder, GraphBuilder>();
+        builder.Services.AddScoped<IConflictDetector, ConflictDetector>();
+        builder.Services.AddScoped<IMethodologySelector, MethodologySelector>();
+        builder.Services.AddScoped<IResearchMethodologyFactory, ResearchMethodologyFactory>();
+        builder.Services.AddScoped<IResearchAnalysisBuilder, ResearchAnalysisBuilder>();
+        builder.Services.AddScoped<IResearchPipeline, ResearchPipeline>();
+
+        // Pluggable Methodologies
+        builder.Services.AddScoped<IResearchMethodology, ThematicMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, LiteralMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, ComparativeMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, FiqhMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, AqidahMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, LinguisticMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, HistoricalMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, ChronologicalMethodology>();
+        builder.Services.AddScoped<IResearchMethodology, TafsirMethodology>();
+
+        // Pluggable Conflict Rules
+        builder.Services.AddScoped<IConflictRule, WeakNarrationRule>();
+        builder.Services.AddScoped<IConflictRule, AbrogationRule>();
+        builder.Services.AddScoped<IConflictRule, MadhhabDifferenceRule>();
+        builder.Services.AddScoped<IConflictRule, ContextDifferenceRule>();
+
+        // Pluggable Pipeline Behaviors
+        builder.Services.AddScoped<IResearchPipelineBehavior, ExceptionBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, MetricsBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, LoggingBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, RetrievalBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, DeduplicationBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, AnalysisBehavior>();
 
         // Embedding Pipeline Stages
         builder.Services.AddScoped<IEmbeddingPipelineStage, NormalizationStage>();

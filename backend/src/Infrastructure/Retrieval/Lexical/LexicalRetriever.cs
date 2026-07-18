@@ -26,6 +26,16 @@ public class LexicalRetriever : ILexicalRetriever
         CancellationToken cancellationToken)
     {
         var docs = new List<KnowledgeDocument>();
+
+        if (parameters.TargetReference != null)
+        {
+            var doc = await GetDocumentByReferenceAsync(parameters.TargetReference, cancellationToken);
+            if (doc != null)
+            {
+                docs.Add(doc);
+            }
+        }
+
         var tokens = parameters.Query.Tokens;
 
         if (tokens == null || tokens.Count == 0)
@@ -103,7 +113,7 @@ public class LexicalRetriever : ILexicalRetriever
             }
         }
 
-        return docs.Take(parameters.Pagination.PageSize * 2).ToList();
+        return docs.GroupBy(d => d.Id).Select(g => g.First()).Take(parameters.Pagination.PageSize * 2).ToList();
     }
 
     public async Task<KnowledgeDocument?> GetDocumentByReferenceAsync(

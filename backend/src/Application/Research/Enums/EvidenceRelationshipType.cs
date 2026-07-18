@@ -11,5 +11,11 @@ public enum EvidenceRelationshipType
     Repeats,
     Contextualizes,
     Similar,
-    DerivedFrom
+    DerivedFrom,
+    Expands,
+    Limits,
+    Abrogates,
+    Generalizes,
+    Specifies,
+    Duplicate
 }
