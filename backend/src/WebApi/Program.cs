@@ -242,10 +242,16 @@ public class Program
         builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IMemoryCompressor, IslamicApp.Infrastructure.Research.Memory.MemoryCompressor>();
         builder.Services.AddScoped<IslamicApp.Application.Research.Memory.IMemoryContextBuilder, IslamicApp.Infrastructure.Research.Memory.MemoryContextBuilder>();
 
+        // Milestone 10 DI Registrations
+        builder.Services.AddSingleton<IslamicApp.Infrastructure.Research.IResearchQueue, IslamicApp.Infrastructure.Research.ResearchQueue>();
+        builder.Services.AddHostedService<IslamicApp.Infrastructure.Research.ResearchBackgroundWorker>();
+        builder.Services.AddSignalR();
+
         builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(
             typeof(Program).Assembly,
             typeof(IslamicApp.Infrastructure.Persistence.EventHandlers.SaveSessionSnapshotHandler).Assembly,
             typeof(IslamicApp.Infrastructure.Persistence.EventHandlers.MemoryEventHandlers).Assembly,
+            typeof(IslamicApp.Infrastructure.Persistence.EventHandlers.ResearchStageCompletedHandler).Assembly,
             typeof(IslamicApp.Application.Research.Events.ResearchStartedEvent).Assembly
         ));
 
@@ -337,6 +343,7 @@ public class Program
             });
         }
 
+        app.MapHub<IslamicApp.Infrastructure.Research.ResearchHub>("/hubs/research");
         app.MapControllers();
 
         try

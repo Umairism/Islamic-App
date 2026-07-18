@@ -8,7 +8,9 @@ public interface IResearchPipeline
 {
     Task<Result<ResearchExecutionContext>> ExecuteAsync(
         QueryAnalysis query, 
-        CancellationToken cancellationToken);
+        System.Guid? sessionId = null,
+        System.Guid? workspaceId = null,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IResearchPipelineBehavior

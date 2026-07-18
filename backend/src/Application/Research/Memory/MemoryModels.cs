@@ -44,6 +44,17 @@ public enum MemoryInvalidationReason
     ManualReview
 }
 
+public enum ResearchSessionStatus
+{
+    Created,
+    Queued,
+    Running,
+    Paused,
+    Completed,
+    Failed,
+    Cancelled
+}
+
 public enum IterationTerminationReason
 {
     ConfidenceReached,

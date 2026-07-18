@@ -131,3 +131,43 @@ public record ValidationFailedEvent(
     Guid WorkspaceId,
     ValidationReport Report
 ) : IDomainEvent;
+
+public record ResearchSessionQueuedEvent(
+    Guid EventId,
+    DateTimeOffset OccurredAt,
+    Guid SessionId,
+    Guid WorkspaceId
+) : IDomainEvent;
+
+public record ResearchSessionStartedEvent(
+    Guid SessionId,
+    Guid WorkspaceId,
+    DateTimeOffset OccurredAt
+) : MediatR.INotification;
+
+public record ResearchSessionCompletedEvent(
+    Guid SessionId,
+    Guid WorkspaceId,
+    DateTimeOffset OccurredAt
+) : MediatR.INotification;
+
+public record ResearchSessionCancelledEvent(
+    Guid SessionId,
+    Guid WorkspaceId,
+    DateTimeOffset OccurredAt
+) : MediatR.INotification;
+
+public record ResearchSessionFailedEvent(
+    Guid SessionId,
+    Guid WorkspaceId,
+    string ErrorMessage,
+    DateTimeOffset OccurredAt
+) : MediatR.INotification;
+
+public record ResearchStageCompletedEvent(
+    Guid SessionId,
+    string Stage,
+    int Progress,
+    string Message,
+    DateTimeOffset OccurredAt
+) : MediatR.INotification;

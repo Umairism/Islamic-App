@@ -34,6 +34,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<OutboxMessage> OutboxMessages { get; set; }
     public DbSet<SearchIndexEntity> SearchIndices { get; set; }
     public DbSet<MemoryEntryEntity> MemoryEntries { get; set; }
+    public DbSet<ResearchIterationEntity> ResearchIterations { get; set; }
+    public DbSet<ResearchEventEntity> ResearchEvents { get; set; }
+    public DbSet<ResearchResultEntity> ResearchResults { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -237,6 +240,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ConfidenceValue).HasColumnName("confidenceValue").IsRequired();
             entity.Property(e => e.ConfidenceLevel).HasColumnName("confidenceLevel").IsRequired();
             entity.Property(e => e.Status).HasColumnName("status").IsRequired();
+            entity.Property(e => e.CurrentStage).HasColumnName("currentStage").IsRequired();
+            entity.Property(e => e.RowVersion).HasColumnName("rowVersion").IsRowVersion();
 
             entity.HasOne(d => d.Workspace)
                 .WithMany(p => p.Sessions)
@@ -492,6 +497,62 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.InvalidationReason).HasColumnName("invalidationReason");
 
             entity.HasIndex(e => e.WorkspaceId);
+        });
+
+        modelBuilder.Entity<ResearchIterationEntity>(entity =>
+        {
+            entity.ToTable("ResearchIteration");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.ResearchSessionId).HasColumnName("researchSessionId").IsRequired();
+            entity.Property(e => e.IterationNumber).HasColumnName("iterationNumber").IsRequired();
+            entity.Property(e => e.PipelineStage).HasColumnName("pipelineStage").IsRequired();
+            entity.Property(e => e.ConfidenceScore).HasColumnName("confidenceScore").IsRequired();
+            entity.Property(e => e.GapsJson).HasColumnName("gapsJson").IsRequired();
+            entity.Property(e => e.RetrievedNodesJson).HasColumnName("retrievedNodesJson").IsRequired();
+            entity.Property(e => e.NewEvidenceJson).HasColumnName("newEvidenceJson").IsRequired();
+            entity.Property(e => e.DurationMs).HasColumnName("durationMs").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("createdAt").IsRequired();
+
+            entity.HasOne(d => d.Session)
+                .WithMany(p => p.Iterations)
+                .HasForeignKey(d => d.ResearchSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ResearchEventEntity>(entity =>
+        {
+            entity.ToTable("ResearchEvent");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.ResearchSessionId).HasColumnName("researchSessionId").IsRequired();
+            entity.Property(e => e.EventType).HasColumnName("eventType").IsRequired();
+            entity.Property(e => e.PayloadJson).HasColumnName("payloadJson").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("createdAt").IsRequired();
+
+            entity.HasOne(d => d.Session)
+                .WithMany(p => p.Events)
+                .HasForeignKey(d => d.ResearchSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ResearchResultEntity>(entity =>
+        {
+            entity.ToTable("ResearchResult");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.ResearchSessionId).HasColumnName("researchSessionId").IsRequired();
+            entity.Property(e => e.AnswerText).HasColumnName("answerText").IsRequired();
+            entity.Property(e => e.ConfidenceScore).HasColumnName("confidenceScore").IsRequired();
+            entity.Property(e => e.CitationsJson).HasColumnName("citationsJson").IsRequired();
+            entity.Property(e => e.Version).HasColumnName("version").IsRequired();
+            entity.Property(e => e.IsFinal).HasColumnName("isFinal").IsRequired();
+            entity.Property(e => e.GeneratedAt).HasColumnName("generatedAt").IsRequired();
+
+            entity.HasOne(d => d.Session)
+                .WithMany(p => p.Results)
+                .HasForeignKey(d => d.ResearchSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

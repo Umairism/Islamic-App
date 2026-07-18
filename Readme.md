@@ -6,7 +6,7 @@ An enterprise-grade, evidence-first research platform for Islamic primary source
 
 ---
 
-## 🌟 Key Capabilities (Milestone 9)
+## Key Capabilities (Milestone 9)
 
 - **Agentic Iterative Research Loops**: When reasoning gaps (such as weak citations or missing primary evidences) are detected, the pipeline automatically drafts target `RetrievalPlan` instances to search the corpus again, iteratively building up a complete answer until validation conditions are satisfied.
 - **Explainable Composite Confidence**: Confidence scores are calculated using a pluggable, weighted calculator incorporating evidence verification (35%), citation authority (25%), rule validation (20%), model reasoning (15%), and methodology (5%). Breakdown analysis is logged in telemetry and returned with each query.
@@ -16,7 +16,7 @@ An enterprise-grade, evidence-first research platform for Islamic primary source
 
 ---
 
-## 🛠️ Architecture Overview
+## Architecture Overview
 
 The system is constructed following strict **Clean Architecture** and Domain-Driven Design (DDD) principles:
 
@@ -47,7 +47,7 @@ graph TD
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - .NET 8.0 SDK

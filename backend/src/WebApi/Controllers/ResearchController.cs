@@ -11,6 +11,7 @@ using IslamicApp.Application.Research.Models;
 using IslamicApp.Application.Research.Analysis;
 using IslamicApp.Application.Research.Memory;
 using IslamicApp.Application.Semantic.Query;
+using Microsoft.EntityFrameworkCore;
 
 namespace IslamicApp.WebApi.Controllers;
 
@@ -25,6 +26,8 @@ public class ResearchController : ControllerBase
     private readonly IQueryAnalyzer _queryAnalyzer;
     private readonly IQueryRewriter _queryRewriter;
     private readonly IKnowledgeMemoryStore _memoryStore;
+    private readonly IslamicApp.Infrastructure.Research.IResearchQueue _queue;
+    private readonly IslamicApp.Infrastructure.Persistence.ApplicationDbContext _dbContext;
 
     public ResearchController(
         IResearchService researchService,
@@ -32,7 +35,9 @@ public class ResearchController : ControllerBase
         IResearchPipeline researchPipeline,
         IQueryAnalyzer queryAnalyzer,
         IQueryRewriter queryRewriter,
-        IKnowledgeMemoryStore memoryStore)
+        IKnowledgeMemoryStore memoryStore,
+        IslamicApp.Infrastructure.Research.IResearchQueue queue,
+        IslamicApp.Infrastructure.Persistence.ApplicationDbContext dbContext)
     {
         _researchService = researchService;
         _exportEngine = exportEngine;
@@ -40,6 +45,8 @@ public class ResearchController : ControllerBase
         _queryAnalyzer = queryAnalyzer;
         _queryRewriter = queryRewriter;
         _memoryStore = memoryStore;
+        _queue = queue;
+        _dbContext = dbContext;
     }
 
     /// <summary>
@@ -377,7 +384,7 @@ public class ResearchController : ControllerBase
         var rewritten = await _queryRewriter.RewriteAsync(request.Query, cancellationToken);
         queryAnalysis = queryAnalysis with { SemanticQuery = rewritten };
 
-        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken);
+        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken: cancellationToken);
         if (!pipeResult.IsSuccess)
         {
             return BadRequest(new ProblemDetails
@@ -404,6 +411,166 @@ public class ResearchController : ControllerBase
         );
 
         return Ok(new ApiResponse<ResearchResult>(response));
+    }
+
+    /// <summary>
+    /// Starts asynchronous background research processing on a workspace query.
+    /// </summary>
+    [HttpPost("/api/v1/workspaces/{id}/research/start")]
+    [ProducesResponseType(202)]
+    public async Task<IActionResult> StartResearch([FromRoute] Guid id, [FromBody] SynthesizeRequestDto request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Query))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Bad Request",
+                Detail = "Search query parameter cannot be empty."
+            });
+        }
+
+        var session = new IslamicApp.Infrastructure.Persistence.Entities.ResearchSessionEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = id,
+            Title = request.Query.Length > 50 ? request.Query.Substring(0, 47) + "..." : request.Query,
+            Query = request.Query,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Methodology = "Thematic",
+            Language = "English",
+            ConfidenceValue = 1.0,
+            ConfidenceLevel = "Normal",
+            Status = "Queued",
+            CurrentStage = "Queueing"
+        };
+
+        _dbContext.ResearchSessions.Add(session);
+        await _dbContext.SaveChangesAsync();
+
+        // Enqueue job asynchronously
+        await _queue.EnqueueAsync(new IslamicApp.Infrastructure.Research.ResearchJob(session.Id, id, DateTimeOffset.UtcNow));
+
+        return Accepted(new
+        {
+            sessionId = session.Id,
+            status = "queued",
+            hubUrl = "/hubs/research",
+            estimatedStages = 13
+        });
+    }
+
+    /// <summary>
+    /// Cancels active research session processing.
+    /// </summary>
+    [HttpPost("/api/v1/research/{id}/cancel")]
+    public async Task<IActionResult> CancelResearch([FromRoute] Guid id)
+    {
+        var session = await _dbContext.ResearchSessions.FindAsync(id);
+        if (session == null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = 404,
+                Title = "Not Found",
+                Detail = $"Research session {id} not found."
+            });
+        }
+
+        if (session.Status == "Completed" || session.Status == "Failed" || session.Status == "Cancelled")
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = 400,
+                Title = "Invalid Action",
+                Detail = $"Cannot cancel research session in state {session.Status}."
+            });
+        }
+
+        session.Status = "Cancelled";
+        session.CurrentStage = "Cancelled";
+        
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Status = 409,
+                Title = "Concurrency Conflict",
+                Detail = "The session has been updated by another process."
+            });
+        }
+
+        return Ok(new { success = true, message = "Cancellation requested." });
+    }
+
+    /// <summary>
+    /// Retrieves active progress status and metrics of a research session.
+    /// </summary>
+    [HttpGet("/api/v1/research/{id}/status")]
+    public async Task<IActionResult> GetResearchStatus([FromRoute] Guid id)
+    {
+        var session = await _dbContext.ResearchSessions
+            .Include(s => s.Iterations)
+            .FirstOrDefaultAsync(s => s.Id == id);
+
+        if (session == null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = 404,
+                Title = "Not Found",
+                Detail = $"Research session {id} not found."
+            });
+        }
+
+        return Ok(new
+        {
+            sessionId = session.Id,
+            status = session.Status,
+            stage = session.CurrentStage,
+            iterationCount = session.Iterations.Count,
+            updatedAt = DateTimeOffset.UtcNow
+        });
+    }
+
+    /// <summary>
+    /// Retrieves the completed/versioned research results.
+    /// </summary>
+    [HttpGet("/api/v1/research/{id}/result")]
+    public async Task<IActionResult> GetResearchResult([FromRoute] Guid id)
+    {
+        var result = await _dbContext.ResearchResults
+            .Where(r => r.ResearchSessionId == id)
+            .OrderByDescending(r => r.Version)
+            .FirstOrDefaultAsync();
+
+        if (result == null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = 404,
+                Title = "Not Found",
+                Detail = $"Research result for session {id} not found."
+            });
+        }
+
+        var citationsList = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.CitationsJson) ?? new List<string>();
+
+        return Ok(new
+        {
+            resultId = result.Id,
+            sessionId = result.ResearchSessionId,
+            answer = result.AnswerText,
+            confidence = result.ConfidenceScore,
+            citations = citationsList,
+            version = result.Version,
+            isFinal = result.IsFinal,
+            generatedAt = result.GeneratedAt
+        });
     }
 }
 
