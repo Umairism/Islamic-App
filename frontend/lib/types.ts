@@ -341,7 +341,9 @@ export enum PipelineStage {
   Reasoning = 'Reasoning',
   Validation = 'Validation',
   Explainability = 'Explainability',
+  Evaluation = 'Evaluation',
   Rendering = 'Rendering',
+  DossierGeneration = 'DossierGeneration',
   Completed = 'Completed',
   Failed = 'Failed'
 }
@@ -382,3 +384,30 @@ export interface MemoryEntryDto {
   evidenceCount: number;
   createdAt: string;
 }
+
+export interface ResearchQualityScore {
+  evidenceCoverage: number;
+  citationAccuracy: number;
+  reasoningConsistency: number;
+  sourceDiversity: number;
+  overallScore: number;
+}
+
+export interface EvaluationFinding {
+  category: string;
+  description: string;
+  severity: 'Info' | 'Warning' | 'Error';
+}
+
+export interface EvaluationResultDto {
+  sessionId: string;
+  overallScore: number;
+  evidenceCoverage: number;
+  citationAccuracy: number;
+  reasoningConsistency: number;
+  sourceDiversity: number;
+  evaluationVersion: string;
+  createdAt: string;
+  findings: EvaluationFinding[];
+}
+

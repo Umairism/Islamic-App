@@ -6,11 +6,14 @@ import {
   ResearchClaim,
   ResearchSessionStatus,
   MemoryEntryDto,
+  EvaluationResultDto,
 } from '@/lib/types';
 import { signalRClient } from '@/lib/signalRClient';
 import { ResearchProgress } from './ResearchProgress';
 import { ConfidenceMeter } from './ConfidenceMeter';
 import { ResearchMemoryPanel } from './ResearchMemoryPanel';
+import { EvaluationReport } from './EvaluationReport';
+import { DossierViewer } from './DossierViewer';
 import { Search, Sparkles, BookOpen, Layers, CheckCircle } from 'lucide-react';
 
 export const ResearchWorkspace: React.FC = () => {
@@ -24,6 +27,9 @@ export const ResearchWorkspace: React.FC = () => {
   const [claims, setClaims] = useState<ResearchClaim[]>([]);
   const [confidence, setConfidence] = useState<number>(0.95);
   const [memories, setMemories] = useState<MemoryEntryDto[]>([]);
+  const [evaluation, setEvaluation] = useState<EvaluationResultDto | null>(null);
+  const [dossierMarkdown, setDossierMarkdown] = useState<string>('');
+  const [dossierHash, setDossierHash] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -39,7 +45,7 @@ export const ResearchWorkspace: React.FC = () => {
         setMemories(data);
       }
     } catch {
-      // Backend api offline fallback mock data
+      // Backend api offline fallback
     }
   };
 
@@ -51,6 +57,8 @@ export const ResearchWorkspace: React.FC = () => {
     setErrorMessage('');
     setSummary('');
     setClaims([]);
+    setEvaluation(null);
+    setDossierMarkdown('');
     setCompletedStages([]);
     setStatus(ResearchSessionStatus.Queued);
 
@@ -84,6 +92,8 @@ export const ResearchWorkspace: React.FC = () => {
         setStatus(newStatus);
         if (newStatus === ResearchSessionStatus.Completed) {
           fetchFinalResult(newSessionId);
+          fetchEvaluation(newSessionId);
+          fetchDossier(newSessionId);
           fetchMemories();
         }
       });
@@ -106,7 +116,32 @@ export const ResearchWorkspace: React.FC = () => {
         if (data.confidenceScore) setConfidence(data.confidenceScore);
       }
     } catch {
-      // API result fallback
+      // API fallback
+    }
+  };
+
+  const fetchEvaluation = async (sid: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/v1/research/${sid}/evaluation`);
+      if (res.ok) {
+        const data = await res.json();
+        setEvaluation(data);
+      }
+    } catch {
+      // API fallback
+    }
+  };
+
+  const fetchDossier = async (sid: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/v1/dossiers/${sid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDossierMarkdown(data.markdownContent || '');
+        setDossierHash(data.contentHash || '');
+      }
+    } catch {
+      // API fallback
     }
   };
 
@@ -124,7 +159,7 @@ export const ResearchWorkspace: React.FC = () => {
                 Islamic AI Research Platform
               </h1>
               <p className="text-sm text-slate-400 mt-1">
-                Autonomous Jurisprudential Synthesis & Forensic Evidence Provenance Engine
+                Autonomous Research Verification, Evaluation & Dossier Generation System
               </p>
             </div>
           </div>
@@ -160,7 +195,7 @@ export const ResearchWorkspace: React.FC = () => {
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Progress & Memory */}
+          {/* Left Column: Progress, Memory & Evaluation */}
           <div className="lg:col-span-1 space-y-6">
             <ResearchProgress
               status={status}
@@ -169,10 +204,11 @@ export const ResearchWorkspace: React.FC = () => {
               errorMessage={errorMessage}
             />
             <ConfidenceMeter score={confidence} />
+            <EvaluationReport evaluation={evaluation} />
             <ResearchMemoryPanel memories={memories} />
           </div>
 
-          {/* Right Column: Reasoning Output & Claims */}
+          {/* Right Column: Reasoning Output, Claims & Dossier Viewer */}
           <div className="lg:col-span-2 space-y-6">
             <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl shadow-xl space-y-6">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -245,9 +281,17 @@ export const ResearchWorkspace: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* Dossier Viewer */}
+            <DossierViewer
+              markdownContent={dossierMarkdown}
+              contentHash={dossierHash}
+              sessionId={sessionId || undefined}
+            />
           </div>
         </div>
       </div>
     </div>
   );
 };
+

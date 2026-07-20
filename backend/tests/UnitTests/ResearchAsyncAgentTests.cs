@@ -28,7 +28,12 @@ using IslamicApp.Infrastructure.Research.Analysis.ConflictRules;
 using IslamicApp.Infrastructure.Research.Analysis.Methodologies;
 using IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors;
 using IslamicApp.Infrastructure.Search;
+using IslamicApp.Application.Research.Evaluation;
+using IslamicApp.Application.Research.Evaluation.Models;
 using IslamicApp.Infrastructure.Semantic.Query;
+using IslamicApp.Application.Research.Evaluation;
+using IslamicApp.Application.Research.Evaluation.Models;
+using NSubstitute;
 
 namespace IslamicApp.UnitTests;
 
@@ -429,7 +434,7 @@ public class ResearchAsyncAgentTests
         }
 
         await dbContext.Database.ExecuteSqlRawAsync(@"
-            DROP TABLE IF EXISTS ""MemoryEntry"", ""ResearchSessions"", ""ResearchIterations"", ""ResearchEvents"", ""ResearchResults"", ""ResearchSession"", ""ResearchIteration"", ""ResearchEvent"", ""ResearchResult"";
+            DROP TABLE IF EXISTS ""ResearchEvaluation"", ""ResearchEvaluations"", ""ResearchDossier"", ""ResearchDossiers"", ""MemoryEntry"", ""ResearchSessions"", ""ResearchIterations"", ""ResearchEvents"", ""ResearchResults"", ""ResearchSession"", ""ResearchIteration"", ""ResearchEvent"", ""ResearchResult"";
             CREATE TABLE IF NOT EXISTS ""MemoryEntry"" (
                 ""id"" UUID PRIMARY KEY,
                 ""workspaceId"" UUID NOT NULL,
@@ -494,6 +499,48 @@ public class ResearchAsyncAgentTests
                 ""isFinal"" BOOLEAN NOT NULL,
                 ""generatedAt"" TIMESTAMPTZ NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS ""ResearchEvaluations"" (
+                ""id"" UUID PRIMARY KEY,
+                ""researchSessionId"" UUID NOT NULL,
+                ""overallScore"" DOUBLE PRECISION NOT NULL,
+                ""evidenceCoverage"" DOUBLE PRECISION NOT NULL,
+                ""citationAccuracy"" DOUBLE PRECISION NOT NULL,
+                ""reasoningConsistency"" DOUBLE PRECISION NOT NULL,
+                ""sourceDiversity"" DOUBLE PRECISION NOT NULL,
+                ""metricsJson"" TEXT NOT NULL,
+                ""findingsJson"" TEXT NOT NULL,
+                ""evaluationVersion"" TEXT NOT NULL,
+                ""createdAt"" TIMESTAMPTZ NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ""ResearchDossiers"" (
+                ""id"" UUID PRIMARY KEY,
+                ""researchSessionId"" UUID NOT NULL,
+                ""contentHash"" TEXT NOT NULL,
+                ""storagePath"" TEXT NOT NULL,
+                ""format"" TEXT NOT NULL,
+                ""createdAt"" TIMESTAMPTZ NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ""ResearchEvaluation"" (
+                ""id"" UUID PRIMARY KEY,
+                ""researchSessionId"" UUID NOT NULL,
+                ""overallScore"" DOUBLE PRECISION NOT NULL,
+                ""evidenceCoverage"" DOUBLE PRECISION NOT NULL,
+                ""citationAccuracy"" DOUBLE PRECISION NOT NULL,
+                ""reasoningConsistency"" DOUBLE PRECISION NOT NULL,
+                ""sourceDiversity"" DOUBLE PRECISION NOT NULL,
+                ""metricsJson"" TEXT NOT NULL,
+                ""findingsJson"" TEXT NOT NULL,
+                ""evaluationVersion"" TEXT NOT NULL,
+                ""createdAt"" TIMESTAMPTZ NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ""ResearchDossier"" (
+                ""id"" UUID PRIMARY KEY,
+                ""researchSessionId"" UUID NOT NULL,
+                ""contentHash"" TEXT NOT NULL,
+                ""storagePath"" TEXT NOT NULL,
+                ""format"" TEXT NOT NULL,
+                ""createdAt"" TIMESTAMPTZ NOT NULL
+            );
         ");
 
         var evidenceRepo = new PostgresEvidenceRepository(dbContext);
@@ -533,6 +580,13 @@ public class ResearchAsyncAgentTests
         var outputGuard = new OutputGuard(renderers);
         var reasoner = new Reasoner(promptService, new ITextGenerationProvider[] { resilientProvider }, parser, validator, explainabilityBuilder, outputGuard);
 
+        var evaluator = Substitute.For<IResearchEvaluator>();
+        evaluator.EvaluateAsync(Arg.Any<ResearchExecutionContext>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult(new EvaluationResult(Guid.NewGuid(), new ResearchQualityScore(1, 1, 1, 1, 1), new List<EvaluationFinding>(), "1.0", DateTimeOffset.UtcNow)));
+        var dossierGen = Substitute.For<IDossierGenerator>();
+        dossierGen.GenerateAsync(Arg.Any<ResearchExecutionContext>(), Arg.Any<EvaluationResult>(), Arg.Any<CancellationToken>())
+                  .Returns(Task.FromResult(new DossierGenerationResult("Markdown", "hash", "path")));
+
         var behaviors = new List<IResearchPipelineBehavior>
         {
             new ExceptionBehavior(Microsoft.Extensions.Logging.Abstractions.NullLogger<ExceptionBehavior>.Instance),
@@ -543,7 +597,9 @@ public class ResearchAsyncAgentTests
             new ReasoningBehavior(reasoner),
             new ValidationBehavior(validator, new ReasoningTelemetry(Microsoft.Extensions.Logging.Abstractions.NullLogger<ReasoningTelemetry>.Instance)),
             new ExplainabilityBehavior(explainabilityBuilder),
-            new RenderingBehavior(renderers)
+            new EvaluationBehavior(evaluator, dbContext),
+            new RenderingBehavior(renderers),
+            new DossierGenerationBehavior(dossierGen, evaluator, dbContext)
         };
 
         var pipeline = new ResearchPipeline(behaviors, Substitute.For<IMediator>());

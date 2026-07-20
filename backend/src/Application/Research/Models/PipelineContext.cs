@@ -14,7 +14,9 @@ public enum PipelineStage
     Reasoning,
     Validation,
     Explainability,
+    Evaluation,
     Rendering,
+    DossierGeneration,
     Completed,
     Failed
 }

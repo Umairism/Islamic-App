@@ -60,7 +60,7 @@ public class RenderingBehavior : IResearchPipelineBehavior
             var updatedExecContext = executionContext
                 .WithRenderedOutputs(outputs.ToImmutableList())
                 .WithStageExecution(stageExecution)
-                .TransitionTo(PipelineStage.Completed);
+                .TransitionTo(PipelineStage.DossierGeneration);
 
             return await next(updatedExecContext);
         }

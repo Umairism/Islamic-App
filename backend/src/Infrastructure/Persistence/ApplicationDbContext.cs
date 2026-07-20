@@ -37,6 +37,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<ResearchIterationEntity> ResearchIterations { get; set; }
     public DbSet<ResearchEventEntity> ResearchEvents { get; set; }
     public DbSet<ResearchResultEntity> ResearchResults { get; set; }
+    public DbSet<ResearchEvaluationEntity> ResearchEvaluations { get; set; }
+    public DbSet<ResearchDossierEntity> ResearchDossiers { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -553,6 +555,35 @@ public class ApplicationDbContext : DbContext
                 .WithMany(p => p.Results)
                 .HasForeignKey(d => d.ResearchSessionId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ResearchEvaluationEntity>(entity =>
+        {
+            entity.ToTable("ResearchEvaluation");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.ResearchSessionId).HasColumnName("researchSessionId").IsRequired();
+            entity.Property(e => e.OverallScore).HasColumnName("overallScore").IsRequired();
+            entity.Property(e => e.EvidenceCoverage).HasColumnName("evidenceCoverage").IsRequired();
+            entity.Property(e => e.CitationAccuracy).HasColumnName("citationAccuracy").IsRequired();
+            entity.Property(e => e.ReasoningConsistency).HasColumnName("reasoningConsistency").IsRequired();
+            entity.Property(e => e.SourceDiversity).HasColumnName("sourceDiversity").IsRequired();
+            entity.Property(e => e.MetricsJson).HasColumnName("metricsJson").IsRequired();
+            entity.Property(e => e.FindingsJson).HasColumnName("findingsJson").IsRequired();
+            entity.Property(e => e.EvaluationVersion).HasColumnName("evaluationVersion").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("createdAt").IsRequired();
+        });
+
+        modelBuilder.Entity<ResearchDossierEntity>(entity =>
+        {
+            entity.ToTable("ResearchDossier");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.ResearchSessionId).HasColumnName("researchSessionId").IsRequired();
+            entity.Property(e => e.Format).HasColumnName("format").IsRequired();
+            entity.Property(e => e.ContentHash).HasColumnName("contentHash").IsRequired();
+            entity.Property(e => e.StoragePath).HasColumnName("storagePath").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("createdAt").IsRequired();
         });
     }
 }

@@ -205,8 +205,16 @@ public class Program
         builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.ValidationBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.IterationBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.ExplainabilityBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.EvaluationBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.RenderingBehavior>();
+        builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.DossierGenerationBehavior>();
         builder.Services.AddScoped<IResearchPipelineBehavior, IslamicApp.Infrastructure.Research.Analysis.PipelineBehaviors.PersistenceBehavior>();
+
+        // Milestone 11 Verification, Evaluation & Dossier Services
+        builder.Services.Configure<IslamicApp.Application.Research.Evaluation.Models.EvaluationOptions>(builder.Configuration.GetSection(IslamicApp.Application.Research.Evaluation.Models.EvaluationOptions.SectionName));
+        builder.Services.AddScoped<IslamicApp.Application.Research.Evaluation.ICitationVerifier, IslamicApp.Infrastructure.Research.Evaluation.CitationVerificationService>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Evaluation.IResearchEvaluator, IslamicApp.Infrastructure.Research.Evaluation.ResearchEvaluationEngine>();
+        builder.Services.AddScoped<IslamicApp.Application.Research.Evaluation.IDossierGenerator, IslamicApp.Infrastructure.Research.Dossier.DossierGenerator>();
 
         // Milestone 8 DI Registrations
         builder.Services.AddSingleton<IResearchFeatureFlags, IslamicApp.Infrastructure.Research.ResearchFeatureFlags>();

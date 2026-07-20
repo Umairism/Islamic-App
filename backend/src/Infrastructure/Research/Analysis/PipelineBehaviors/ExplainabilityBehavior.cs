@@ -41,7 +41,7 @@ public class ExplainabilityBehavior : IResearchPipelineBehavior
             var updatedExecContext = executionContext
                 .WithExplainability(explainability)
                 .WithStageExecution(stageExecution)
-                .TransitionTo(PipelineStage.Rendering);
+                .TransitionTo(PipelineStage.Evaluation);
 
             return await next(updatedExecContext);
         }

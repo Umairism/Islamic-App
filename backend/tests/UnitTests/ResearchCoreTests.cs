@@ -4,6 +4,12 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediatR;
+using IslamicApp.Application.Research.Evaluation;
+using IslamicApp.Application.Research.Evaluation.Models;
+using IslamicApp.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 using Xunit;
 
 using IslamicApp.Application.Research.Analysis;
@@ -224,19 +230,27 @@ public class ResearchCoreTests
 
         var analysisBuilder = new ResearchAnalysisBuilder(methodologySelector, mockFactory, graphBuilder, conflictDetector);
 
-        // 3. Chain pipeline behaviors
-        var behaviors = new List<IResearchPipelineBehavior>
-        {
-            new ExceptionBehavior(new MockLogger<ExceptionBehavior>()),
-            new LoggingBehavior(new MockLogger<LoggingBehavior>()),
-            new RetrievalBehavior(mockRepo),
-            new DeduplicationBehavior(deduplicator),
-            new AnalysisBehavior(analysisBuilder),
-            new ReasoningBehavior(new MockReasoner()),
-            new ValidationBehavior(new MockResearchValidator(), new MockTelemetry()),
-            new ExplainabilityBehavior(new MockExplainabilityBuilder()),
-            new RenderingBehavior(new List<IResearchRenderer> { new MarkdownRenderer(), new HtmlRenderer() })
-        };
+            var evaluator = Substitute.For<IResearchEvaluator>();
+            evaluator.EvaluateAsync(Arg.Any<ResearchExecutionContext>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(new EvaluationResult(Guid.NewGuid(), new ResearchQualityScore(1, 1, 1, 1, 1), new List<EvaluationFinding>(), "1.0", DateTimeOffset.UtcNow)));
+            var dossierGen = Substitute.For<IDossierGenerator>();
+            dossierGen.GenerateAsync(Arg.Any<ResearchExecutionContext>(), Arg.Any<EvaluationResult>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(new DossierGenerationResult("Markdown", "hash", "path")));
+            var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+            var dbContext = new ApplicationDbContext(options);
+
+            var behaviors = new List<IResearchPipelineBehavior>
+            {
+                new ExceptionBehavior(new MockLogger<ExceptionBehavior>()),
+                new LoggingBehavior(new MockLogger<LoggingBehavior>()),
+                new RetrievalBehavior(mockRepo),
+                new DeduplicationBehavior(deduplicator),
+                new AnalysisBehavior(analysisBuilder),
+                new ReasoningBehavior(new MockReasoner()),
+                new ValidationBehavior(new MockResearchValidator(), new MockTelemetry()),
+                new ExplainabilityBehavior(new MockExplainabilityBuilder()),
+                new EvaluationBehavior(evaluator, dbContext),
+                new RenderingBehavior(new List<IResearchRenderer> { new MarkdownRenderer(), new HtmlRenderer() }),
+                new DossierGenerationBehavior(dossierGen, evaluator, dbContext)
+            };
 
         var pipeline = new ResearchPipeline(behaviors, NSubstitute.Substitute.For<MediatR.IMediator>());
 

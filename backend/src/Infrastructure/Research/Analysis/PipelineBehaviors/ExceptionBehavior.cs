@@ -33,7 +33,9 @@ public class ExceptionBehavior : IResearchPipelineBehavior
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception occurred in the Research Pipeline.");
-            return Result<ResearchExecutionContext>.Failure(new Error("PipelineError", $"An unexpected error occurred: {ex.Message}", ErrorSeverity.Critical));
+            var msg = ex.Message;
+            if (ex.InnerException != null) msg += " INNER: " + ex.InnerException.Message;
+            return Result<ResearchExecutionContext>.Failure(new Error("PipelineError", $"An unexpected error occurred: {msg}", ErrorSeverity.Critical));
         }
     }
 }

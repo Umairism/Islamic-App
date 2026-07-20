@@ -36,7 +36,9 @@ public class ResearchPipeline : IResearchPipeline
         AddBehaviorIfRegistered<ValidationBehavior>(behaviorsList);
         AddBehaviorIfRegistered<IterationBehavior>(behaviorsList);
         AddBehaviorIfRegistered<ExplainabilityBehavior>(behaviorsList);
+        AddBehaviorIfRegistered<EvaluationBehavior>(behaviorsList);
         AddBehaviorIfRegistered<RenderingBehavior>(behaviorsList);
+        AddBehaviorIfRegistered<DossierGenerationBehavior>(behaviorsList);
         AddBehaviorIfRegistered<PersistenceBehavior>(behaviorsList);
 
         // Add any remaining custom behaviors that might be registered
