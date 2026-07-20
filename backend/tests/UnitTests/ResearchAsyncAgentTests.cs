@@ -293,6 +293,117 @@ public class ResearchAsyncAgentTests
         Assert.True(updatedSession.Results.First().IsFinal);
     }
 
+    [Fact]
+    public async Task ExecuteQuery_CircumcisionRuling_ReturnsDossierAndSummary()
+    {
+        // Arrange
+        var dbContext = CreateInMemoryDbContext();
+        var sessionId = Guid.NewGuid();
+        var workspaceId = Guid.NewGuid();
+        var session = new ResearchSessionEntity
+        {
+            Id = sessionId,
+            WorkspaceId = workspaceId,
+            Title = "Circumcision Ruling in Islam",
+            Query = "What are the ruling about circumcision in Islam?",
+            Status = "Queued",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        dbContext.ResearchSessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var queue = new ResearchQueue();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddSingleton(dbContext);
+        serviceCollection.AddSingleton(Substitute.For<IMediator>());
+
+        var queryAnalyzer = Substitute.For<IQueryAnalyzer>();
+        var queryRewriter = Substitute.For<IQueryRewriter>();
+        queryRewriter.RewriteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(new SemanticQuery("circumcision ruling in islam khitan fitrah wajib sunnah", new List<string>(), new List<string>(), new List<string>(), 1.0)));
+        
+        serviceCollection.AddSingleton(queryAnalyzer);
+        serviceCollection.AddSingleton(queryRewriter);
+
+        var pipeline = Substitute.For<IResearchPipeline>();
+        
+        var searchReq = new SearchRequest("What are the ruling about circumcision in Islam?", ResearchLanguage.Auto, new HashSet<EvidenceSource> { EvidenceSource.Quran, EvidenceSource.Hadith }, new Pagination(1, 20), true, true, true);
+        var queryAnalysis = new QueryAnalysis(
+            searchReq,
+            new NormalizedQuery("circumcision ruling in islam", "circumcision ruling in islam", new List<string>(), new List<string>(), new List<string>(), new List<string>()),
+            ResearchLanguage.Auto,
+            new QueryIntent(SearchMode.KeywordSearch, new HashSet<EvidenceSource>(), new HashSet<RetrievalCapability>(), 1.0),
+            null,
+            new List<string>()
+        );
+        queryAnalyzer.AnalyzeAsync(Arg.Any<SearchRequest>()).Returns(Task.FromResult(queryAnalysis));
+
+        var answerSummary = "Circumcision (Khitan) is a fundamental practice in Islam originating from the Fitrah (natural human disposition) and the tradition (Millah) of Prophet Ibrahim (peace be upon him).\n\n" +
+            "### Primary Sources & Evidence\n" +
+            "1. **Sunnah / Hadith**: Narrated by Abu Hurairah (RA), the Messenger of Allah (ﷺ) said: 'Five acts are of the Fitrah: circumcision, shaving pubic hair, trimming the mustache, clipping nails, and plucking armpit hair.' (*Sahih al-Bukhari 5889, Sahih Muslim 257*).\n" +
+            "2. **Quranic Tradition**: Allah Almighty commands in Surah An-Nahl (16:123): 'Then We revealed to you [O Muhammad] to follow the religion of Abraham, inclination toward truth...'\n\n" +
+            "### Scholarly Consensus & Juristic Rulings (Fiqh)\n" +
+            "- **Shafi'i & Hanbali Schools**: Obligatory (*Wajib*) for males as a fundamental emblem of purification and prayer validity.\n" +
+            "- **Hanafi & Maliki Schools**: Highly Emphasized Sunnah (*Sunnah Mu'akkadah*) and an essential Islamic symbol (*Sha'irah*).";
+
+        var execCtx = new ResearchExecutionContext(
+            Context: new ResearchContext(new ResearchInput(queryAnalysis)),
+            Events: System.Collections.Immutable.ImmutableList<IDomainEvent>.Empty,
+            CurrentStage: PipelineStage.Completed,
+            StageExecutions: System.Collections.Immutable.ImmutableList<PipelineStageExecution>.Empty,
+            Reasoning: new ReasoningResult(
+                Summary: answerSummary,
+                Claims: new List<ResearchClaim>
+                {
+                    new ResearchClaim("Circumcision is among the five acts of Fitrah", new List<ReferenceId> { new ReferenceId("Bukhari-5889"), new ReferenceId("Muslim-257") }, new ConfidenceScore(0.98), ClaimType.LegalRuling, ClaimOrigin.DirectEvidence),
+                    new ResearchClaim("Shafi'i and Hanbali jurists consider Khitan Wajib for men", new List<ReferenceId> { new ReferenceId("Fiqh-Al-Islami-1/450") }, new ConfidenceScore(0.95), ClaimType.LegalRuling, ClaimOrigin.MultiEvidenceInference)
+                },
+                Findings: new List<ResearchFinding>(),
+                Limitations: new List<ResearchLimitation>(),
+                Methodology: ResearchMethodologyType.Fiqh,
+                PromptVersion: "1.0",
+                RawResponse: answerSummary,
+                Metadata: new GenerationMetadata("provider", "model", 150, 250, TimeSpan.FromSeconds(1.2), false, FinishReason.Stop)
+            ),
+            Iteration: new IterationContext(
+                CurrentIteration: 1,
+                State: PipelineState.Completed,
+                Confidence: new CompositeConfidence(0.98, 0.95, 0.96, 0.94, 1.0),
+                History: System.Collections.Immutable.ImmutableList.Create(new IterationRecord(
+                    Iteration: 1,
+                    RetrievedNodes: new List<string> { "Hadith-Bukhari-5889", "Hadith-Muslim-257", "Quran-16-123" },
+                    NewEvidence: new List<string> { "Ref-Fiqh-1" },
+                    ConfidenceResult: new ConfidenceResult(0.96, new Dictionary<string, double> { { "Evidence", 0.98 }, { "Citation", 0.95 } }, "High scholarly consensus and direct Fitrah Hadith evidence."),
+                    KnowledgeGaps: new List<EvidenceGap>(),
+                    Duration: TimeSpan.FromSeconds(1.2)
+                )),
+                PendingGaps: new List<EvidenceGap>(),
+                RetrievedEvidence: new List<string> { "Bukhari-5889", "Muslim-257", "Quran-16-123" }
+            )
+        );
+
+        pipeline.ExecuteAsync(Arg.Any<QueryAnalysis>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Result<ResearchExecutionContext>.Success(execCtx));
+
+        serviceCollection.AddSingleton(pipeline);
+
+        var serviceProvider = serviceCollection.BuildServiceProvider();
+        var logger = Substitute.For<ILogger<ResearchBackgroundWorker>>();
+        var worker = new ResearchBackgroundWorker(queue, serviceProvider, logger);
+
+        var job = new ResearchJob(sessionId, workspaceId, DateTimeOffset.UtcNow);
+
+        // Action
+        var method = typeof(ResearchBackgroundWorker).GetMethod("ProcessJobAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method.Invoke(worker, new object[] { job, CancellationToken.None });
+
+        // Assert
+        var result = await dbContext.ResearchResults.FirstOrDefaultAsync(r => r.ResearchSessionId == sessionId);
+        Assert.NotNull(result);
+        Assert.Contains("Fitrah", result.AnswerText);
+        Assert.Contains("Shafi'i", result.AnswerText);
+        Assert.Equal(0.98, result.ConfidenceScore);
+    }
+
     private List<string> JsonSerializerDeserializerHelper(string json)
     {
         return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
