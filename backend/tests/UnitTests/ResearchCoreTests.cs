@@ -238,7 +238,7 @@ public class ResearchCoreTests
             new RenderingBehavior(new List<IResearchRenderer> { new MarkdownRenderer(), new HtmlRenderer() })
         };
 
-        var pipeline = new ResearchPipeline(behaviors);
+        var pipeline = new ResearchPipeline(behaviors, NSubstitute.Substitute.For<MediatR.IMediator>());
 
         var query = new QueryAnalysis(
             new SearchRequest("test query", ResearchLanguage.English, new HashSet<EvidenceSource>(), new Pagination(1, 10), false, false, false),
@@ -249,7 +249,7 @@ public class ResearchCoreTests
             new List<string>()
         );
 
-        var result = await pipeline.ExecuteAsync(query, CancellationToken.None);
+        var result = await pipeline.ExecuteAsync(query, cancellationToken: CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         var execContext = result.Value;

@@ -250,7 +250,7 @@ public class ResearchController : ControllerBase
         var rewritten = await _queryRewriter.RewriteAsync(request.Query, cancellationToken);
         queryAnalysis = queryAnalysis with { SemanticQuery = rewritten };
 
-        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken);
+        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken: cancellationToken);
         if (!pipeResult.IsSuccess)
         {
             return BadRequest(new ProblemDetails
@@ -309,7 +309,7 @@ public class ResearchController : ControllerBase
         var rewritten = await _queryRewriter.RewriteAsync(request.Query, cancellationToken);
         queryAnalysis = queryAnalysis with { SemanticQuery = rewritten };
 
-        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken);
+        var pipeResult = await _researchPipeline.ExecuteAsync(queryAnalysis, cancellationToken: cancellationToken);
         if (!pipeResult.IsSuccess)
         {
             return BadRequest(new ProblemDetails

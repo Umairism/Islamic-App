@@ -11,9 +11,12 @@ using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using NSubstitute;
 using IslamicApp.Application.Research.Analysis;
+using IslamicApp.Application.Research.Enums;
 using IslamicApp.Application.Research.Events;
+using IslamicApp.Application.Research.Interfaces;
 using IslamicApp.Application.Research.Memory;
 using IslamicApp.Application.Research.Models;
+using IslamicApp.Application.Semantic.Query;
 using IslamicApp.Infrastructure.Persistence;
 using IslamicApp.Infrastructure.Persistence.Entities;
 using IslamicApp.Infrastructure.Persistence.EventHandlers;
@@ -157,7 +160,7 @@ public class ResearchAsyncAgentTests
         
         // Mock query rewrites / analyzer to throw exception
         var queryAnalyzer = Substitute.For<IQueryAnalyzer>();
-        queryAnalyzer.AnalyzeAsync(Arg.Any<SearchRequest>()).Returns(x => throw new InvalidOperationException("API failure"));
+        queryAnalyzer.AnalyzeAsync(Arg.Any<SearchRequest>()).Returns(Task.FromException<QueryAnalysis>(new InvalidOperationException("API failure")));
         serviceCollection.AddSingleton(queryAnalyzer);
 
         var queryRewriter = Substitute.For<IQueryRewriter>();
@@ -210,13 +213,23 @@ public class ResearchAsyncAgentTests
         serviceCollection.AddSingleton(queryAnalyzer);
 
         var queryRewriter = Substitute.For<IQueryRewriter>();
+        queryRewriter.RewriteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(new SemanticQuery("rewritten query", new List<string>(), new List<string>(), new List<string>(), 1.0)));
         serviceCollection.AddSingleton(queryRewriter);
 
         var pipeline = Substitute.For<IResearchPipeline>();
         
         // Stub successful execution result
-        var searchReq = new SearchRequest("Preservation of Quran", ResearchLanguage.Auto, new HashSet<EvidenceSource>());
-        var queryAnalysis = new QueryAnalysis(searchReq, "original", "semantic", new List<QueryConcept>());
+        var searchReq = new SearchRequest("Preservation of Quran", ResearchLanguage.Auto, new HashSet<EvidenceSource> { EvidenceSource.Quran }, new Pagination(1, 20), true, true, true);
+        var queryAnalysis = new QueryAnalysis(
+            searchReq,
+            new NormalizedQuery("preservation of quran", "preservation of quran", new List<string>(), new List<string>(), new List<string>(), new List<string>()),
+            ResearchLanguage.Auto,
+            new QueryIntent(SearchMode.KeywordSearch, new HashSet<EvidenceSource>(), new HashSet<RetrievalCapability>(), 1.0),
+            null,
+            new List<string>()
+        );
+
+        queryAnalyzer.AnalyzeAsync(Arg.Any<SearchRequest>()).Returns(Task.FromResult(queryAnalysis));
         
         var execCtx = new ResearchExecutionContext(
             Context: new ResearchContext(new ResearchInput(queryAnalysis)),
@@ -239,13 +252,14 @@ public class ResearchAsyncAgentTests
                 Confidence: new CompositeConfidence(0.95, 0.90, 0.95, 0.90, 1.0),
                 History: System.Collections.Immutable.ImmutableList.Create(new IterationRecord(
                     Iteration: 1,
-                    State: PipelineState.Completed,
-                    ConfidenceResult: new ConfidenceResult(0.92, "High", new Dictionary<string, double>(), "explanation"),
-                    KnowledgeGaps: new List<EvidenceGap>(),
                     RetrievedNodes: new List<string> { "node-1" },
                     NewEvidence: new List<string> { "ref-1" },
+                    ConfidenceResult: new ConfidenceResult(0.92, new Dictionary<string, double>(), "explanation"),
+                    KnowledgeGaps: new List<EvidenceGap>(),
                     Duration: TimeSpan.FromSeconds(2)
-                ))
+                )),
+                PendingGaps: new List<EvidenceGap>(),
+                RetrievedEvidence: new List<string> { "ref-1" }
             )
         );
 
