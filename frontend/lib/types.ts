@@ -319,3 +319,66 @@ export interface ApiResponse<T> {
 export interface SearchApiResponse extends ApiResponse<SearchResults> {
   cacheHit?: boolean;
 }
+
+// ============================================================================
+// Research Session & Streaming Lifecycle Models (Milestone 10)
+// ============================================================================
+
+export enum ResearchSessionStatus {
+  Created = 'Created',
+  Queued = 'Queued',
+  Running = 'Running',
+  WaitingForIteration = 'WaitingForIteration',
+  Completed = 'Completed',
+  Failed = 'Failed',
+  Cancelled = 'Cancelled'
+}
+
+export enum PipelineStage {
+  Retrieval = 'Retrieval',
+  Deduplication = 'Deduplication',
+  Analysis = 'Analysis',
+  Reasoning = 'Reasoning',
+  Validation = 'Validation',
+  Explainability = 'Explainability',
+  Rendering = 'Rendering',
+  Completed = 'Completed',
+  Failed = 'Failed'
+}
+
+export interface ResearchEventSignalR {
+  sessionId: string;
+  eventType: string;
+  stage?: PipelineStage;
+  timestamp: string;
+  payloadJson?: string;
+}
+
+export interface ResearchClaim {
+  statement: string;
+  confidence: number;
+  supportingEvidence: string[];
+  claimType: string;
+  origin: string;
+}
+
+export interface ResearchResultDto {
+  sessionId: string;
+  version: number;
+  answerText: string;
+  confidenceScore: number;
+  isFinal: boolean;
+  claims: ResearchClaim[];
+  renderedMarkdown?: string;
+  renderedHtml?: string;
+}
+
+export interface MemoryEntryDto {
+  id: string;
+  workspaceId: string;
+  query: string;
+  summary: string;
+  confidenceOverall: number;
+  evidenceCount: number;
+  createdAt: string;
+}

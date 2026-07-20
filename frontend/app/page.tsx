@@ -1,20 +1,16 @@
 import React from 'react'
-import { SearchPageClient } from '@/components/pages/SearchPageClient'
+import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { LayoutWrapper } from '@/components/layout/LayoutWrapper'
 
 export const metadata = {
-  title: 'Search | Islamic Research Platform',
-  description: 'Search and browse Quran, Hadith, Tafsir, and Fiqh sources',
+  title: 'Research Workspace | Islamic AI Platform',
+  description: 'Autonomous Jurisprudential Synthesis & Research Execution Platform',
 }
 
-/**
- * Main search page - server component wrapper
- * Handles layout and delegates interactive functionality to client component
- */
 export default function SearchPage() {
   return (
     <LayoutWrapper>
-      <SearchPageClient />
+      <ResearchWorkspace />
     </LayoutWrapper>
   )
 }
