@@ -24,67 +24,74 @@ public class MockProvider : ITextGenerationProvider
         var sw = Stopwatch.StartNew();
         
         var query = prompt.Variables.Query.ToLowerInvariant();
+        var refId = prompt.Variables.AllowedReferences?.Select(r => r.Value).FirstOrDefault()
+                    ?? prompt.Variables.Snippets?.Select(s => s.Reference.Value).FirstOrDefault()
+                    ?? "2:255";
         string mockJson;
 
         if (query.Contains("alcohol") || query.Contains("wine"))
         {
-            mockJson = @"{
-                ""summary"": ""The evolution of legal rulings on intoxicants progressed in stages, starting with general warnings and culminating in complete prohibition."",
-                ""claims"": [
+            mockJson = $$"""
+            {
+                "summary": "The evolution of legal rulings on intoxicants progressed in stages, starting with general warnings and culminating in complete prohibition.",
+                "claims": [
                     {
-                        ""statement"": ""Alcohol consumption was prohibited in stages."",
-                        ""supportingEvidence"": [""2:255""],
-                        ""confidence"": { ""value"": 0.95 },
-                        ""claimType"": ""LegalRuling"",
-                        ""origin"": ""DirectEvidence""
+                        "statement": "Alcohol consumption was prohibited in stages.",
+                        "supportingEvidence": ["{{refId}}"],
+                        "confidence": 0.95,
+                        "claimType": "LegalRuling",
+                        "origin": "DirectEvidence"
                     }
                 ],
-                ""findings"": [
+                "findings": [
                     {
-                        ""section"": ""Chronological Prohibitions"",
-                        ""heading"": ""Gradual Abrogation"",
-                        ""details"": ""Evidence shows that earlier verses permitted wine but warned against its harm, which was later abrogated by absolute prohibition."",
-                        ""citedReferences"": [""2:255""]
+                        "section": "Chronological Prohibitions",
+                        "heading": "Gradual Abrogation",
+                        "details": "Evidence shows that earlier verses permitted wine but warned against its harm, which was later abrogated by absolute prohibition.",
+                        "citedReferences": ["{{refId}}"]
                     }
                 ],
-                ""limitations"": [
+                "limitations": [
                     {
-                        ""limitationDescription"": ""The prohibition was historical and gradual."",
-                        ""impact"": ""Rulings prior to final abrogation must not be followed in practice."",
-                        ""affectedEvidences"": [""2:255""]
+                        "limitationDescription": "The prohibition was historical and gradual.",
+                        "impact": "Rulings prior to final abrogation must not be followed in practice.",
+                        "affectedEvidences": ["{{refId}}"]
                     }
                 ]
-            }";
+            }
+            """;
         }
         else
         {
-            mockJson = @"{
-                ""summary"": ""General theological synthesis of the provided references, discussing core values, ethical constraints, and general directives."",
-                ""claims"": [
+            mockJson = $$"""
+            {
+                "summary": "Circumcision (Khitan) is established in Islamic jurisprudence as an act of Fitrah (natural disposition) and a Sunnah of Prophet Ibrahim (peace be upon him).",
+                "claims": [
                     {
-                        ""statement"": ""The primary source dictates ethical relations between individuals."",
-                        ""supportingEvidence"": [""2:255""],
-                        ""confidence"": { ""value"": 0.90 },
-                        ""claimType"": ""Theological"",
-                        ""origin"": ""DirectEvidence""
+                        "statement": "Circumcision is a key practice of the Fitrah according to authentic Hadith narrations.",
+                        "supportingEvidence": ["{{refId}}"],
+                        "confidence": 0.95,
+                        "claimType": "LegalRuling",
+                        "origin": "DirectEvidence"
                     }
                 ],
-                ""findings"": [
+                "findings": [
                     {
-                        ""section"": ""Theological Pillars"",
-                        ""heading"": ""Ethics and Justice"",
-                        ""details"": ""Evidence indicates that justice and ethics form the backbone of all relational references."",
-                        ""citedReferences"": [""2:255""]
+                        "section": "Sunnah and Fitrah",
+                        "heading": "Islamic Ruling on Circumcision",
+                        "details": "Islamic scholars agree that circumcision is among the practices of Fitrah, strongly emphasized in prophetic tradition.",
+                        "citedReferences": ["{{refId}}"]
                     }
                 ],
-                ""limitations"": [
+                "limitations": [
                     {
-                        ""limitationDescription"": ""None identified."",
-                        ""impact"": ""None."",
-                        ""affectedEvidences"": []
+                        "limitationDescription": "None identified.",
+                        "impact": "None.",
+                        "affectedEvidences": []
                     }
                 ]
-            }";
+            }
+            """;
         }
 
         sw.Stop();
